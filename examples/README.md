@@ -59,6 +59,21 @@ Learn how to:
 python examples/user_management.py
 ```
 
+### [websocket_chat.py](websocket_chat.py)
+**Natural Language Queriesn**
+
+Learn how to:
+- Establish WebSocket connections with SigV4 authentication
+- Send queries and receive real-time AI responses
+- Handle multi-turn conversations
+- Process streaming updates
+- Implement reconnection logic
+- Handle WebSocket errors gracefully
+
+```bash
+python examples/websocket_chat.py
+```
+
 ### [sql_analytics.py](sql_analytics.py)
 **SQL queries and analytics**
 
@@ -71,6 +86,21 @@ Learn how to:
 
 ```bash
 python examples/sql_analytics.py
+```
+
+### [promql_metrics.py](promql_metrics.py)
+**PromQL metrics and time-series queries**
+
+Learn how to:
+- Ingest metrics in Prometheus exposition format
+- Execute PromQL instant queries
+- Perform PromQL range queries for time-series data
+- Use label selectors and filters
+- Implement metric aggregations
+- Calculate rates and perform arithmetic operations
+
+```bash
+python examples/promql_metrics.py
 ```
 
 ### [error_handling.py](error_handling.py)
@@ -109,11 +139,10 @@ from infino_sdk import InfinoSDK
 
 access_key = os.getenv("INFINO_ACCESS_KEY")
 secret_key = os.getenv("INFINO_SECRET_KEY")
-endpoint = os.getenv("INFINO_ENDPOINT", "https://api.infino.ai")
+endpoint = os.getenv("INFINO_ENDPOINT", "https://api.infino.ws")
 
-async with InfinoSDK(access_key, secret_key, endpoint) as sdk:
-    # Your code here
-    pass
+sdk = InfinoSDK(access_key, secret_key, endpoint)
+# Your code here
 ```
 
 ### Error Handling
@@ -122,7 +151,7 @@ async with InfinoSDK(access_key, secret_key, endpoint) as sdk:
 from infino_sdk import InfinoError
 
 try:
-    result = await sdk.some_operation()
+    result = sdk.some_operation()
 except InfinoError as e:
     if e.status_code() == 404:
         print("Resource not found")
@@ -130,21 +159,15 @@ except InfinoError as e:
         print(f"Error: {e.message}")
 ```
 
-### Context Managers
+### Session Management
 
 ```python
-# Recommended: Using context manager (auto-closes session)
-async with InfinoSDK(access_key, secret_key, endpoint) as sdk:
-    await sdk.ping()
-    # Session automatically closed
-
-# Manual session management
+# Basic usage - SDK handles session automatically
 sdk = InfinoSDK(access_key, secret_key, endpoint)
-await sdk._ensure_session()
-try:
-    await sdk.ping()
-finally:
-    await sdk.close()
+sdk.ping()
+
+# The SDK manages HTTP sessions internally
+# No need for manual session management
 ```
 
 ## Need Help?

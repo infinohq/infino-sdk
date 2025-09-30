@@ -1,9 +1,11 @@
 """
 Pytest configuration and shared fixtures
+
+Based on patterns from infino/tests/api/python/src/utils
 """
 
 import pytest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 from infino_sdk.lib import InfinoSDK, RetryConfig
 
 
@@ -22,7 +24,7 @@ def secret_key():
 @pytest.fixture
 def endpoint():
     """Test endpoint"""
-    return "https://api.test.infino.ai"
+    return "https://api.test.infino.ws"
 
 
 @pytest.fixture
@@ -36,30 +38,15 @@ def retry_config():
 
 
 @pytest.fixture
-async def sdk(access_key, secret_key, endpoint, retry_config):
-    """Create SDK instance for testing"""
-    sdk = InfinoSDK(
-        access_key=access_key,
-        secret_key=secret_key,
-        endpoint=endpoint,
-        retry_config=retry_config
-    )
-    await sdk._ensure_session()
-    yield sdk
-    await sdk.close()
-
-
-@pytest.fixture
 def mock_response():
     """Create a mock HTTP response"""
     def _mock_response(status=200, json_data=None, text=""):
-        response = AsyncMock()
-        response.status = status
-        response.text = AsyncMock(return_value=text)
+        response = Mock()
+        response.status_code = status
+        response.text = text
         
         if json_data:
-            import json as json_module
-            response.text = AsyncMock(return_value=json_module.dumps(json_data))
+            response.json.return_value = json_data
         
         return response
     
@@ -67,24 +54,19 @@ def mock_response():
 
 
 @pytest.fixture
-def mock_session(mock_response):
-    """Create a mock aiohttp session"""
-    session = AsyncMock()
-    
-    # Default successful response
-    response = mock_response(200, {"acknowledged": True})
-    session.request.return_value.__aenter__.return_value = response
-    
-    return session
+def mock_requests():
+    """Create a mock requests module for testing"""
+    with patch('infino_sdk.lib.requests') as mock_req:
+        yield mock_req
 
 
 @pytest.fixture
-async def sdk_with_mock_session(access_key, secret_key, endpoint, mock_session):
-    """Create SDK with mocked session"""
-    sdk = InfinoSDK(access_key, secret_key, endpoint)
-    sdk.session = mock_session
-    yield sdk
-    # Don't close - session is mocked
+def mock_sdk():
+    """Create a mock SDK instance for testing"""
+    with patch('infino_sdk.lib.requests') as mock_requests:
+        sdk = InfinoSDK("test_access", "test_secret", "https://test.infino.ws")
+        sdk._session = MagicMock()
+        yield sdk, mock_requests
 
 
 @pytest.fixture
@@ -194,4 +176,45 @@ def sample_sql_response():
         ],
         "total": 2,
         "size": 2
+    }
+
+
+@pytest.fixture
+def sample_promql_instant_response():
+    """Sample PromQL instant query response"""
+    import time
+    return {
+        "status": "success",
+        "data": {
+            "resultType": "vector",
+            "result": [
+                {
+                    "metric": {"__name__": "cpu_usage", "host": "server1"},
+                    "value": [time.time(), "75.5"]
+                }
+            ]
+        }
+    }
+
+
+@pytest.fixture
+def sample_promql_range_response():
+    """Sample PromQL range query response"""
+    import time
+    now = time.time()
+    return {
+        "status": "success",
+        "data": {
+            "resultType": "matrix",
+            "result": [
+                {
+                    "metric": {"__name__": "cpu_usage", "host": "server1"},
+                    "values": [
+                        [now, "75.5"],
+                        [now + 60, "80.1"],
+                        [now + 120, "78.3"]
+                    ]
+                }
+            ]
+        }
     }

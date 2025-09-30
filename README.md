@@ -5,6 +5,8 @@
 
 Official Python SDK for [Infino](https://infino.ai), providing seamless access to search, analytics, ML, and AI capabilities with AWS SigV4 authentication.
 
+This API is derived from OpenSearch, so most tools that work with OpenSearch should work with Infino.
+
 ## Features
 
 - 🔐 **Automatic AWS SigV4 Authentication** - All requests are automatically signed
@@ -31,7 +33,7 @@ async def main():
     async with InfinoSDK(
         access_key="your_access_key",
         secret_key="your_secret_key",
-        endpoint="https://api.infino.ai"
+        endpoint="https://api.infino.ws"
     ) as sdk:
         # Check connection
         info = await sdk.ping()
@@ -47,8 +49,8 @@ asyncio.run(main())
 
 ## Getting Your Credentials
 
-1. Sign up at [app.infino.ai](https://app.infino.ai)
-2. Create a new account
+1. Sign up at [app.infino.ws](https://app.infino.ws)
+2. Create a new account (accounts can only be created through the UI)
 3. Navigate to Settings → API Keys
 4. Generate your `access_key` and `secret_key`
 
@@ -488,7 +490,6 @@ See the [examples/](examples/) directory for complete working examples:
 - [**basic_search.py**](examples/basic_search.py) - Simple search operations
 - [**bulk_indexing.py**](examples/bulk_indexing.py) - Bulk data ingestion
 - [**user_management.py**](examples/user_management.py) - Security and access control
-- [**ml_operations.py**](examples/ml_operations.py) - ML model deployment and inference
 - [**websocket_chat.py**](examples/websocket_chat.py) - Real-time WebSocket communication
 - [**sql_analytics.py**](examples/sql_analytics.py) - SQL query examples
 - [**error_handling.py**](examples/error_handling.py) - Robust error handling patterns

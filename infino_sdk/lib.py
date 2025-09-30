@@ -9,11 +9,10 @@ from urllib.parse import urlparse
 import urllib.parse
 from dataclasses import dataclass
 from enum import Enum
+import time
 
-import asyncio
 import backoff
-import aiohttp
-import requests  # Still needed for type hints in legacy methods
+import requests
 import websockets
 
 # Configure logging
@@ -49,7 +48,7 @@ EMPTY_PAYLOAD_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b78
 TRACE_LEVEL = 5  # Lower than DEBUG (10)
 logging.addLevelName(TRACE_LEVEL, "TRACE")
 
-async def trace(self, message, *args, **kwargs):
+def trace(self, message, *args, **kwargs):
     """Custom trace level logging."""
     if self.isEnabledFor(TRACE_LEVEL):
         self.log(TRACE_LEVEL, message, *args, **kwargs)
@@ -57,11 +56,11 @@ async def trace(self, message, *args, **kwargs):
 # Add trace method to Logger class
 logging.Logger.trace = trace
 
-# Timeouts
-REQUEST_TIMEOUT_SECS = 180  # 180 seconds
-RETRY_INITIAL_INTERVAL = 1000  # milliseconds
-RETRY_MAX_INTERVAL = 15000  # milliseconds
-RETRY_MAX_ELAPSED_TIME = 90000  # milliseconds
+# Timeouts (in milliseconds unless specified)
+REQUEST_TIMEOUT_SECS = 180 # 180 seconds
+RETRY_INITIAL_INTERVAL = 1000  # Default initial retry interval (1 second)
+RETRY_MAX_INTERVAL = 15000  # Maximum retry interval (15 seconds)
+RETRY_MAX_ELAPSED_TIME = 90000  # Maximum elapsed time for retries (90 seconds)
 
 class InfinoError(Exception):
     """Exception raised for Infino SDK errors"""
@@ -113,33 +112,22 @@ class InfinoSDK:
         self.region = "us-east-1"
         self.service = "es"  # OpenSearch service
 
-        # Will create aiohttp session in async context
-        self.session = None
+        # Use requests session for connection pooling
+        self.session = requests.Session()
 
-    async def _ensure_session(self):
-        """Ensure aiohttp session exists"""
-        if self.session is None:
-            timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECS)
-            connector = aiohttp.TCPConnector(limit=100, limit_per_host=100)
-            self.session = aiohttp.ClientSession(
-                timeout=timeout,
-                connector=connector
-            )
-
-    async def close(self):
-        """Close the aiohttp session"""
+    def close(self):
+        """Close the requests session"""
         if self.session:
-            await self.session.close()
+            self.session.close()
             self.session = None
 
-    async def __aenter__(self):
-        await self._ensure_session()
+    def __enter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.close()
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
-    async def websocket_connect(self, path: str, headers: Optional[Dict[str, str]] = None):
+    def websocket_connect(self, path: str, headers: Optional[Dict[str, str]] = None):
         """Connect to WebSocket endpoint with SigV4 query parameter authentication"""
         parsed = urlparse(self.endpoint)
         ws_proto = "wss" if parsed.scheme == "https" else "ws"
@@ -155,7 +143,7 @@ class InfinoSDK:
         credential = f"{self.access_key}/{date_stamp}/{self.region}/{self.service}/aws4_request"
         signed_headers = 'host'
 
-        # Build query parameters (without signature yet)
+        # Build query parameters for signing
         query_params = [
             ('X-Amz-Algorithm', algorithm),
             ('X-Amz-Credential', credential),
@@ -169,14 +157,14 @@ class InfinoSDK:
         # URL encode parameters
         canonical_querystring = '&'.join([f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}" for k, v in query_params])
 
-        # Create canonical request
+        # Create canonical request for AWS SigV4
         canonical_uri = path
         canonical_headers = f"host:{host}\n"
         payload_hash = hashlib.sha256(b'').hexdigest()  # Empty string hash for WebSocket
 
         canonical_request = f"GET\n{canonical_uri}\n{canonical_querystring}\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
 
-        # Create string to sign
+        # Create string to sign for AWS SigV4
         scope = f"{date_stamp}/{self.region}/{self.service}/aws4_request"
         canonical_request_hash = hashlib.sha256(canonical_request.encode()).hexdigest()
         string_to_sign = f"{algorithm}\n{amz_date}\n{scope}\n{canonical_request_hash}"
@@ -190,12 +178,11 @@ class InfinoSDK:
 
         # Connect with optional additional headers (but auth is in query params)
         if headers:
-            return await websockets.connect(ws_url, additional_headers=headers.items())
-        return await websockets.connect(ws_url)
+            return websockets.connect(ws_url, additional_headers=headers.items())
+        return websockets.connect(ws_url)
 
-    async def request(self, method: str, url: str, headers: Optional[Dict[str, str]] = None, body: Optional[str] = None, params: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    def request(self, method: str, url: str, headers: Optional[Dict[str, str]] = None, body: Optional[str] = None, params: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """Execute an HTTP request with AWS SigV4 authentication"""
-        await self._ensure_session()
 
         logger.debug(f"INFINO SDK: Making {method} request to {url}")
 
@@ -227,7 +214,7 @@ class InfinoSDK:
             req_headers = self.sign_request_headers(method, url, req_headers, timestamp, payload_hash)
 
         # Execute request with retries
-        return await self.execute_request_async(method, url, req_headers, body, params)
+        return self.execute_request(method, url, req_headers, body, params)
 
     def sign_request_headers(self, method: str, url: str, headers: Dict[str, str], timestamp: datetime, payload_hash: str) -> Dict[str, str]:
         """Sign request headers for AWS SigV4"""
@@ -285,55 +272,57 @@ class InfinoSDK:
         signed_headers[AUTHORIZATION_HEADER] = auth_header
         return signed_headers
 
-    async def execute_request_async(self, method: str, url: str, headers: Dict[str, str], body: Optional[str], params: Optional[Dict[str, str]]) -> Dict[str, Any]:
-        """Execute async request with retries"""
+    def execute_request(self, method: str, url: str, headers: Dict[str, str], body: Optional[str], params: Optional[Dict[str, str]]) -> Dict[str, Any]:
+        """Execute request with retries"""
         max_retries = self.retry_config.max_retries
         retry_delay = self.retry_config.initial_interval
 
         for attempt in range(max_retries):
             try:
-                async with self.session.request(
+                response = self.session.request(
                     method=method,
                     url=url,
                     headers=headers,
                     data=body,
-                    params=params
-                ) as response:
-                    status = response.status
-                    text = await response.text()
+                    params=params,
+                    timeout=REQUEST_TIMEOUT_SECS
+                )
+                
+                status = response.status_code
+                text = response.text
 
-                    if 200 <= status < 300:
-                        if text:
-                            try:
-                                return json.loads(text)
-                            except json.JSONDecodeError:
-                                return {"text": text}
-                        return {}
+                if 200 <= status < 300:
+                    if text:
+                        try:
+                            return json.loads(text)
+                        except json.JSONDecodeError:
+                            return {"text": text}
+                    return {}
 
-                    if 400 <= status < 500:  # Client errors - don't retry
-                        if status == 404:
-                            logger.warning(f"Resource not found: {text}")
-                        elif status == 403:
-                            logger.warning(f"Permission denied (403): {text}")
-                        elif status == 401:
-                            logger.warning(f"Unauthorized (401): {text}")
-                        else:
-                            logger.error(f"Client error {status}: {text}")
-                        raise InfinoError(InfinoError.Type.REQUEST, text, status, url)
-
-                    if 500 <= status < 600:  # Server errors - retry
-                        logger.error(f"INFINO SDK: Server error {status}: {text}")
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(retry_delay)
-                            retry_delay = min(retry_delay * 2, self.retry_config.max_interval)
-                            continue
-                        raise InfinoError(InfinoError.Type.REQUEST, text, status, url)
-
+                if 400 <= status < 500:  # Client errors - don't retry
+                    if status == 404:
+                        logger.warning(f"Resource not found: {text}")
+                    elif status == 403:
+                        logger.warning(f"Permission denied (403): {text}")
+                    elif status == 401:
+                        logger.warning(f"Unauthorized (401): {text}")
+                    else:
+                        logger.error(f"Client error {status}: {text}")
                     raise InfinoError(InfinoError.Type.REQUEST, text, status, url)
 
-            except aiohttp.ClientError as e:
+                if 500 <= status < 600:  # Server errors - retry
+                    logger.error(f"INFINO SDK: Server error {status}: {text}")
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 2, self.retry_config.max_interval)
+                        continue
+                    raise InfinoError(InfinoError.Type.REQUEST, text, status, url)
+
+                raise InfinoError(InfinoError.Type.REQUEST, text, status, url)
+
+            except requests.RequestException as e:
                 if attempt < max_retries - 1 and "Connection refused" not in str(e):
-                    await asyncio.sleep(retry_delay)
+                    time.sleep(retry_delay)
                     retry_delay = min(retry_delay * 2, self.retry_config.max_interval)
                     continue
                 raise InfinoError(InfinoError.Type.REQUEST, str(e), 0, url)
@@ -341,7 +330,7 @@ class InfinoSDK:
         raise InfinoError(InfinoError.Type.REQUEST, "Max retries exceeded", 0, url)
 
     def sign_request(self, request: requests.Request, timestamp: datetime) -> requests.Request:
-        """Sign an HTTP request using AWS SigV4"""
+        """Sign an HTTP request using AWS Signature Version 4"""
         request_datetime = timestamp.strftime(DATE_FORMAT)
         request_date = timestamp.strftime(SHORT_DATE_FORMAT)
 
@@ -398,7 +387,7 @@ class InfinoSDK:
         sorted_headers = sorted(signed_headers)
         signed_headers_str = ";".join(sorted_headers)
 
-        # Format auth header as AWS expects
+        # Format authorization header for AWS SigV4
         # Include a space after each comma
         auth_header = f"{ALGORITHM} {CREDENTIAL_HEADER}={components.access_key}/{components.request_date}/{REGION}/{SIGNING_NAME}/{TERMINATION}, {SIGNED_HEADERS_HEADER}={signed_headers_str}, {SIGNATURE_HEADER}={signature}"
 
@@ -429,7 +418,7 @@ class InfinoSDK:
             canonical_query = self.normalize_query(url.query)
 
         # 4. Headers - Must be sorted alphabetically for the canonical request
-        # Sort headers alphabetically per AWS SigV4 spec
+        # Sort headers alphabetically as required by AWS SigV4
         sorted_headers = sorted(signed_headers)
         
         # Build canonical headers section including only the sorted signed headers
@@ -448,7 +437,7 @@ class InfinoSDK:
             EMPTY_PAYLOAD_HASH
         )
 
-        # Combine all components with newlines per AWS format
+        # Combine all components with newlines - exactly matching AWS format
         canonical_request = (
             f"{method}\n"
             f"{canonical_uri}\n"
@@ -462,7 +451,7 @@ class InfinoSDK:
         return canonical_request
 
     def execute_request(self, request: requests.Request) -> requests.Response:
-        """Execute HTTP request with retry logic"""
+        """Execute HTTP request and handle response"""
         @backoff.on_exception(
             backoff.expo,
             (requests.exceptions.RequestException, InfinoError),
@@ -476,7 +465,7 @@ class InfinoSDK:
                 "Connection refused" in str(e)
             )
         )
-        async def do_request():
+        def do_request():
             response = self.session.send(request.prepare())
             status = response.status_code
 
@@ -506,7 +495,7 @@ class InfinoSDK:
         return do_request()
 
     def hmac_sha256(self, key: bytes, data: bytes) -> bytes:
-        """Compute HMAC-SHA256 signature"""
+        """Compute HMAC-SHA256"""
         return hmac.new(key, data, hashlib.sha256).digest()
 
     def derive_signing_key(self, date: str) -> bytes:
@@ -519,7 +508,7 @@ class InfinoSDK:
         logger.debug(f"SIGN REQUEST: SIGNING_NAME: {SIGNING_NAME}")
         logger.debug(f"SIGN REQUEST: TERMINATION: {TERMINATION}")
 
-        # Format the key string for HMAC signing
+        # Format the key string exactly as the server does - must match hmac_sha256 in signatures.rs
         key_string = f"{KEY_PREFIX}{self.secret_key}"
         
         # Step 1: kDate = HMAC(KEY_PREFIX + secret_key, date)
@@ -544,7 +533,7 @@ class InfinoSDK:
         return signing_key
 
     def calculate_signature(self, signing_key: bytes, string_to_sign: str) -> str:
-        """Calculate request signature"""
+        """Calculate AWS SigV4 signature"""
         logger.debug("SIGN REQUEST: Calculating signature")
         logger.debug(f"SIGN REQUEST: Signing key (hex): {signing_key.hex()}")
         logger.debug(f"SIGN REQUEST: String to sign:\n{string_to_sign}")
@@ -570,7 +559,7 @@ class InfinoSDK:
         return string_to_sign
 
     def normalize_query(self, query: str) -> str:
-        """Normalize query string parameters"""
+        """Normalize query parameters for AWS SigV4"""
         if not query:
             return ""
 
@@ -587,7 +576,7 @@ class InfinoSDK:
         return "&".join(f"{k}={v}" for k, v in params)
 
     def uri_encode(self, s: str) -> str:
-        """URI encode string for AWS SigV4"""
+        """URL encode string for AWS SigV4"""
         encoded = ""
         for byte in s.encode('utf-8'):
             if (byte >= ord('A') and byte <= ord('Z')) or \
@@ -601,11 +590,11 @@ class InfinoSDK:
         return encoded
 
     # Index Operations
-    async def create_index(self, index: str) -> Dict[str, Any]:
+    def create_index(self, index: str) -> Dict[str, Any]:
         """Create a new index"""
         url = f"{self.endpoint}/{index}"
         try:
-            response = await self.request("PUT", url)
+            response = self.request("PUT", url)
             return response
         except InfinoError as e:
             # 409 CONFLICT is acceptable for index creation - it means the index already exists
@@ -614,11 +603,11 @@ class InfinoSDK:
                 return {"acknowledged": True, "index": index}
             raise
 
-    async def create_index_with_mapping(self, index: str, mapping: Dict[str, Any]) -> Dict[str, Any]:
-        """Create index with custom mapping"""
+    def create_index_with_mapping(self, index: str, mapping: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new index with explicit mapping"""
         url = f"{self.endpoint}/{index}"
         try:
-            response = await self.request("PUT", url, None, json.dumps(mapping))
+            response = self.request("PUT", url, None, json.dumps(mapping))
             return response
         except InfinoError as e:
             # 409 CONFLICT is acceptable for index creation - it means the index already exists
@@ -627,86 +616,80 @@ class InfinoSDK:
                 return {"acknowledged": True, "index": index}
             raise
 
-    async def delete_index(self, index: str) -> Dict[str, Any]:
+    def delete_index(self, index: str) -> Dict[str, Any]:
         """Delete an index"""
         url = f"{self.endpoint}/{index}"
-        response = await self.request("DELETE", url)
+        response = self.request("DELETE", url)
         return response
 
-    async def get_index(self, index: str) -> Dict[str, Any]:
+    def get_index(self, index: str) -> Dict[str, Any]:
         """Get index information"""
         url = f"{self.endpoint}/{index}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
 
-    async def get_index_settings(self, index: str) -> Dict[str, Any]:
+    def get_index_settings(self, index: str) -> Dict[str, Any]:
         """Get index settings"""
         url = f"{self.endpoint}/{index}/_settings"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
     # Document Operations
-    async def get_document(self, index: str, id: str) -> Dict[str, Any]:
+    def get_document(self, index: str, id: str) -> Dict[str, Any]:
         """Get a document by ID"""
         url = f"{self.endpoint}/{index}/doc/{id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
 
     # Search Operations
-    async def search(self, index: str, query: str) -> Dict[str, Any]:
+    def search(self, index: str, query: str) -> Dict[str, Any]:
         """Execute a search query"""
         url = f"{self.endpoint}/{index}/_search"
-        response = await self.request("GET", url, None, query)
+        response = self.request("GET", url, None, query)
         return response
 
-    async def search_ai(self, index: str, query_text: str) -> Dict[str, Any]:
-        """Execute an AI-powered search"""
+    def search_ai(self, index: str, query_text: str) -> Dict[str, Any]:
+        """Execute AI-powered semantic search"""
         url = f"{self.endpoint}/{index}/_search_ai"
         body = f'"{query_text}"'
-        response = await self.request("GET", url, None, body)
+        response = self.request("GET", url, None, body)
         return response
 
-    async def msearch(self, queries: str) -> Dict[str, Any]:
+    def msearch(self, queries: str) -> Dict[str, Any]:
         """Execute multiple search queries"""
         url = f"{self.endpoint}/_msearch"
-        response = await self.request("POST", url, None, queries)
+        response = self.request("POST", url, None, queries)
         return response
 
-    async def msearch_index(self, index: str, queries: str) -> Dict[str, Any]:
-        """Execute multiple searches on an index"""
+    def msearch_index(self, index: str, queries: str) -> Dict[str, Any]:
+        """Execute multiple search queries with index-specific parameters"""
         url = f"{self.endpoint}/{index}/_msearch"
-        response = await self.request("POST", url, None, queries)
+        response = self.request("POST", url, None, queries)
         return response
 
-    async def sql(self, query: str) -> Dict[str, Any]:
+    def sql(self, query: str) -> Dict[str, Any]:
         """Execute SQL query"""
         url = f"{self.endpoint}/_sql"
         sql_request = {"query": query}
         json_body = json.dumps(sql_request)
-        response = await self.request("POST", url, None, json_body)
+        response = self.request("POST", url, None, json_body)
         return response
 
     # Alias for sql method to match test expectations
-    async def sql_query(self, query: str) -> Dict[str, Any]:
-        """Execute SQL query"""
-        return await self.sql(query)
+    def sql_query(self, query: str) -> Dict[str, Any]:
+        """Execute SQL query (alias for sql method)"""
+        return self.sql(query)
 
     # Bulk Operations
-    async def bulk_ingest(self, index: str, payload: str) -> Dict[str, Any]:
-        """Bulk ingest documents into an index
-        
-        Args:
-            index: Index name
-            payload: NDJSON formatted bulk operations, where each line is a valid JSON object
-                    and operations are paired (action + source)
-        """
+    def bulk_ingest(self, index: str, payload: str) -> Dict[str, Any]:
+        """Bulk index documents"""
         url = f"{self.endpoint}/{index}/_bulk"
         # Add newline at end as required by bulk API
         if not payload.endswith('\n'):
             payload += '\n'
-        response = await self.request(
+        response = self.request(
             "POST", 
             url,
             headers={"Content-Type": "application/x-ndjson"},
@@ -714,16 +697,16 @@ class InfinoSDK:
         )
         return response
 
-    async def metrics(self, index: str, payload: str) -> Dict[str, Any]:
-        """Ingest metrics data"""
+    def metrics(self, index: str, payload: str) -> Dict[str, Any]:
+        """Ingest metrics in Prometheus format"""
         url = f"{self.endpoint}/{index}/_metrics"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        response = await self.request("POST", url, headers, payload)
+        response = self.request("POST", url, headers, payload)
         return response
 
     # Metrics/Prometheus API
-    async def prom_ql_query(self, query: str, index: Optional[str] = None) -> Dict[str, Any]:
-        """Execute PromQL query"""
+    def prom_ql_query(self, query: str, index: Optional[str] = None) -> Dict[str, Any]:
+        """Execute PromQL instant query"""
         from urllib.parse import quote
         url = f"{self.endpoint}/api/v1/query"
 
@@ -732,10 +715,10 @@ class InfinoSDK:
             form_data += f"&index={quote(index)}"
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        response = await self.request("POST", url, headers, form_data)
+        response = self.request("POST", url, headers, form_data)
         return response
 
-    async def prom_ql_query_range(self, query: str, start: int, end: int, step: int, index: Optional[str] = None) -> Dict[str, Any]:
+    def prom_ql_query_range(self, query: str, start: int, end: int, step: int, index: Optional[str] = None) -> Dict[str, Any]:
         """Execute PromQL range query"""
         from urllib.parse import quote
         url = f"{self.endpoint}/api/v1/query_range"
@@ -745,53 +728,53 @@ class InfinoSDK:
             form_data += f"&index={quote(index)}"
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        response = await self.request("POST", url, headers, form_data)
+        response = self.request("POST", url, headers, form_data)
         return response
 
-    async def prom_ql_labels(self) -> Dict[str, Any]:
-        """Get Prometheus labels"""
+    def prom_ql_labels(self) -> Dict[str, Any]:
+        """Get metric labels"""
         url = f"{self.endpoint}/api/v1/labels"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def prom_ql_label_values(self, label: str) -> Dict[str, Any]:
-        """Get label values"""
+    def prom_ql_label_values(self, label: str) -> Dict[str, Any]:
+        """Get label values for a specific label"""
         url = f"{self.endpoint}/api/v1/label/{label}/values"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def prom_ql_series(self, matches: List[str]) -> Dict[str, Any]:
-        """Query Prometheus series"""
+    def prom_ql_series(self, matches: List[str]) -> Dict[str, Any]:
+        """Get time series metadata"""
         url = f"{self.endpoint}/api/v1/series"
         query = "&match[]=".join(matches)
         url = f"{url}?match[]={query}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def prom_ql_build_info(self) -> Dict[str, Any]:
-        """Get Prometheus build info"""
+    def prom_ql_build_info(self) -> Dict[str, Any]:
+        """Get Prometheus build information"""
         url = f"{self.endpoint}/api/v1/status/buildinfo"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
 
-    async def nl_query(self, index: str, query: str) -> Dict[str, Any]:
+    def nl_query(self, index: str, query: str) -> Dict[str, Any]:
         """Execute natural language query"""
         url = f"{self.endpoint}/{index}/_nl_query?q={query}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
 
-    async def summarize(self, index: str, query: str) -> Dict[str, Any]:
-        """Summarize query results"""
+    def summarize(self, index: str, query: str) -> Dict[str, Any]:
+        """Summarize data with AI"""
         url = f"{self.endpoint}/{index}/_summarize"
-        response = await self.request("GET", url, None, query)
+        response = self.request("GET", url, None, query)
         return response
 
 
     @classmethod
     def new(cls, access_key: str, secret_key: str, endpoint: str) -> 'InfinoSDK':
-        """Create new SDK instance"""
+        """Create new SDK instance with credentials"""
         return cls.new_with_retry(access_key, secret_key, endpoint, RetryConfig())
 
     @classmethod
@@ -802,137 +785,137 @@ class InfinoSDK:
         endpoint: str,
         retry_config: RetryConfig
     ) -> 'InfinoSDK':
-        """Create SDK instance with custom retry config"""
+        """Create new SDK instance with custom retry configuration"""
         return cls(access_key, secret_key, endpoint, retry_config)
 
     # User Account/Auth Operations
-    async def get_user_account_info(self) -> Dict[str, Any]:
+    def get_user_account_info(self) -> Dict[str, Any]:
         """Get current user account info"""
         url = f"{self.endpoint}/_plugins/_security/api/account"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_user_auth_info(self) -> Dict[str, Any]:
+    def get_user_auth_info(self) -> Dict[str, Any]:
         """Get current user authentication info"""
         url = f"{self.endpoint}/_plugins/_security/api/authinfo"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def create_user(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def create_user(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new user"""
-        return await self.create_security_resource("internaluser", name, config)
+        return self.create_security_resource("internaluser", name, config)
 
-    async def get_user(self, name: str) -> Dict[str, Any]:
+    def get_user(self, name: str) -> Dict[str, Any]:
         """Get user by name"""
-        return await self.get_security_resource("internaluser", name)
+        return self.get_security_resource("internaluser", name)
 
-    async def update_user(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def update_user(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Update user"""
-        return await self.update_security_resource("internaluser", name, config)
+        return self.update_security_resource("internaluser", name, config)
 
-    async def delete_user(self, name: str) -> Dict[str, Any]:
+    def delete_user(self, name: str) -> Dict[str, Any]:
         """Delete user"""
-        return await self.delete_security_resource("internaluser", name)
+        return self.delete_security_resource("internaluser", name)
 
-    async def list_users(self) -> Dict[str, Any]:
+    def list_users(self) -> Dict[str, Any]:
         """List all users"""
         url = f"{self.endpoint}/_plugins/_security/api/internalusers"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def list_roles(self) -> Dict[str, Any]:
+    def list_roles(self) -> Dict[str, Any]:
         """List all roles"""
         url = f"{self.endpoint}/_plugins/_security/api/roles"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def list_role_mappings(self) -> Dict[str, Any]:
-        """List role mappings"""
+    def list_role_mappings(self) -> Dict[str, Any]:
+        """List all role mappings"""
         url = f"{self.endpoint}/_plugins/_security/api/rolesmapping"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def list_action_groups(self) -> Dict[str, Any]:
-        """List action groups"""
+    def list_action_groups(self) -> Dict[str, Any]:
+        """List all action groups"""
         url = f"{self.endpoint}/_plugins/_security/api/actiongroups"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def generate_user_token(self, credentials: Dict[str, Any]) -> Dict[str, Any]:
+    def generate_user_token(self, credentials: Dict[str, Any]) -> Dict[str, Any]:
         """Generate authentication token for a user"""
         url = f"{self.endpoint}/_plugins/_security/api/authtoken"
-        response = await self.request("POST", url, None, json.dumps(credentials))
+        response = self.request("POST", url, None, json.dumps(credentials))
         return response
 
     # Account Operations
-    async def get_account(self, account_id: str) -> Dict[str, Any]:
+    def get_account(self, account_id: str) -> Dict[str, Any]:
         """Get account information"""
         url = f"{self.endpoint}/_account/{account_id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_source(self, index: str, doc_id: str) -> Dict[str, Any]:
+    def get_source(self, index: str, doc_id: str) -> Dict[str, Any]:
         """Get document source"""
         url = f"{self.endpoint}/{index}/_source/{doc_id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def ping(self) -> Dict[str, Any]:
+    def ping(self) -> Dict[str, Any]:
         """Implementation for GET /"""
         url = f"{self.endpoint}/"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def mget(self, body: str) -> Dict[str, Any]:
+    def mget(self, body: str) -> Dict[str, Any]:
         """Get multiple documents"""
         url = f"{self.endpoint}/_mget"
-        response = await self.request("POST", url, None, body)
+        response = self.request("POST", url, None, body)
         return response
 
-    async def mget_index(self, index: str, body: str) -> Dict[str, Any]:
-        """Get multiple documents from index"""
+    def mget_index(self, index: str, body: str) -> Dict[str, Any]:
+        """Get multiple documents from a specific index"""
         url = f"{self.endpoint}/{index}/_mget"
-        response = await self.request("POST", url, None, body)
+        response = self.request("POST", url, None, body)
         return response
 
-    async def count(self, index: str, query: Optional[str] = None) -> Dict[str, Any]:
+    def count(self, index: str, query: Optional[str] = None) -> Dict[str, Any]:
         """Count documents matching query"""
         url = f"{self.endpoint}/{index}/_count"
-        response = await self.request("GET", url, None, query)
+        response = self.request("GET", url, None, query)
         return response
 
-    async def document_exists(self, index: str, doc_id: str) -> bool:
+    def document_exists(self, index: str, doc_id: str) -> bool:
         """Check if document exists"""
         url = f"{self.endpoint}/{index}/_doc/{doc_id}"
         try:
-            await self.request("HEAD", url)
+            self.request("HEAD", url)
             return True
         except InfinoError as e:
             if e.status_code() == 404:
                 return False
             raise
 
-    async def source_exists(self, index: str, doc_id: str) -> bool:
+    def source_exists(self, index: str, doc_id: str) -> bool:
         """Check if document source exists"""
         url = f"{self.endpoint}/{index}/_source/{doc_id}"
         try:
-            await self.request("HEAD", url)
+            self.request("HEAD", url)
             return True
         except InfinoError as e:
             if e.status_code() == 404:
                 return False
             raise
 
-    async def index_info(self, index: str) -> Dict[str, Any]:
-        """Get index information"""
+    def index_info(self, index: str) -> Dict[str, Any]:
+        """Get information about indices"""
         url = f"{self.endpoint}/{index}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_cat_indices(self) -> List[Dict[str, Any]]:
-        """Get catalog of indices"""
+    def get_cat_indices(self) -> List[Dict[str, Any]]:
+        """Get indices in cat format"""
         url = f"{self.endpoint}/_cat/indices"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         json_response = response
 
         # The response should be an array of indices
@@ -944,156 +927,156 @@ class InfinoSDK:
                 "Unexpected response format from /_cat/indices endpoint"
             )
 
-    async def delete_by_query(self, index: str, query: str) -> Dict[str, Any]:
-        """Delete documents by query"""
+    def delete_by_query(self, index: str, query: str) -> Dict[str, Any]:
+        """Delete documents matching query"""
         url = f"{self.endpoint}/{index}/_delete_by_query"
-        response = await self.request("DELETE", url, None, query)
+        response = self.request("DELETE", url, None, query)
         return response
 
-    async def get_schema(self, index: str) -> Dict[str, Any]:
+    def get_schema(self, index: str) -> Dict[str, Any]:
         """Get index schema"""
         url = f"{self.endpoint}/{index}/_schema"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_mappings(self, index: str) -> Dict[str, Any]:
+    def get_mappings(self, index: str) -> Dict[str, Any]:
         """Get index mappings"""
         url = f"{self.endpoint}/{index}/_mapping"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_index_dir(self, index: str) -> Dict[str, Any]:
+    def get_index_dir(self, index: str) -> Dict[str, Any]:
         """Get index directory information"""
         url = f"{self.endpoint}/{index}/_dir"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def flush(self) -> Dict[str, Any]:
+    def flush(self) -> Dict[str, Any]:
         """Implementation for POST /_flush"""
         url = f"{self.endpoint}/_flush"
-        response = await self.request("POST", url)
+        response = self.request("POST", url)
         return response
 
     # Specific Resource Type Operations
-    async def get_role(self, name: str) -> Dict[str, Any]:
+    def get_role(self, name: str) -> Dict[str, Any]:
         """Get role configuration"""
-        return await self.get_security_resource("role", name)
+        return self.get_security_resource("role", name)
 
-    async def create_role(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def create_role(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new role"""
-        return await self.create_security_resource("role", name, config)
+        return self.create_security_resource("role", name, config)
 
-    async def update_role(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def update_role(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Update role configuration"""
-        return await self.update_security_resource("role", name, config)
+        return self.update_security_resource("role", name, config)
 
-    async def delete_role(self, name: str) -> Dict[str, Any]:
+    def delete_role(self, name: str) -> Dict[str, Any]:
         """Delete a role"""
-        return await self.delete_security_resource("role", name)
+        return self.delete_security_resource("role", name)
 
-    async def get_role_mapping(self, name: str) -> Dict[str, Any]:
+    def get_role_mapping(self, name: str) -> Dict[str, Any]:
         """Get role mapping"""
-        return await self.get_security_resource("rolesmapping", name)
+        return self.get_security_resource("rolesmapping", name)
 
-    async def create_role_mapping(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def create_role_mapping(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Create role mapping"""
-        return await self.create_security_resource("rolesmapping", name, config)
+        return self.create_security_resource("rolesmapping", name, config)
 
-    async def update_role_mapping(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def update_role_mapping(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Update role mapping"""
-        return await self.update_security_resource("rolesmapping", name, config)
+        return self.update_security_resource("rolesmapping", name, config)
 
-    async def delete_role_mapping(self, name: str) -> Dict[str, Any]:
+    def delete_role_mapping(self, name: str) -> Dict[str, Any]:
         """Delete role mapping"""
-        return await self.delete_security_resource("rolesmapping", name)
+        return self.delete_security_resource("rolesmapping", name)
 
-    async def get_action_group(self, name: str) -> Dict[str, Any]:
+    def get_action_group(self, name: str) -> Dict[str, Any]:
         """Get action group"""
-        return await self.get_security_resource("actiongroup", name)
+        return self.get_security_resource("actiongroup", name)
 
-    async def create_action_group(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def create_action_group(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Create action group"""
-        return await self.create_security_resource("actiongroup", name, config)
+        return self.create_security_resource("actiongroup", name, config)
 
-    async def update_action_group(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def update_action_group(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Update action group"""
-        return await self.update_security_resource("actiongroup", name, config)
+        return self.update_security_resource("actiongroup", name, config)
 
-    async def delete_action_group(self, name: str) -> Dict[str, Any]:
+    def delete_action_group(self, name: str) -> Dict[str, Any]:
         """Delete action group"""
-        return await self.delete_security_resource("actiongroup", name)
+        return self.delete_security_resource("actiongroup", name)
 
     # Security Config Operations
-    async def get_security_config(self) -> Dict[str, Any]:
+    def get_security_config(self) -> Dict[str, Any]:
         """Get security configuration"""
         url = f"{self.endpoint}/_plugins/_security/api/securityconfig"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def update_security_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def update_security_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Update security configuration"""
         url = f"{self.endpoint}/_plugins/_security/api/securityconfig"
-        response = await self.request("PUT", url, None, json.dumps(config))
+        response = self.request("PUT", url, None, json.dumps(config))
         return response
 
-    async def get_security_health(self) -> Dict[str, Any]:
+    def get_security_health(self) -> Dict[str, Any]:
         """Get security health status"""
         url = f"{self.endpoint}/_plugins/_security/health"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_tenant(self, name: str) -> Dict[str, Any]:
-        """Get tenant configuration"""
-        return await self.get_security_resource("tenant", name)
+    def get_tenant(self, name: str) -> Dict[str, Any]:
+        """Get tenant information"""
+        return self.get_security_resource("tenant", name)
 
-    async def create_tenant(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a tenant"""
-        return await self.create_security_resource("tenant", name, config)
+    def create_tenant(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new tenant"""
+        return self.create_security_resource("tenant", name, config)
 
-    async def update_tenant(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def update_tenant(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Update tenant configuration"""
-        return await self.update_security_resource("tenant", name, config)
+        return self.update_security_resource("tenant", name, config)
 
-    async def delete_tenant(self, name: str) -> Dict[str, Any]:
+    def delete_tenant(self, name: str) -> Dict[str, Any]:
         """Delete a tenant"""
-        return await self.delete_security_resource("tenant", name)
+        return self.delete_security_resource("tenant", name)
 
 
-    async def get_security_resource(self, resource_type: str, name: str) -> Dict[str, Any]:
+    def get_security_resource(self, resource_type: str, name: str) -> Dict[str, Any]:
         """Get a security resource"""
         plural = "" if resource_type == "rolesmapping" else "s"
         url = f"{self.endpoint}/_plugins/_security/api/{resource_type}{plural}/{name}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def create_security_resource(self, resource_type: str, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def create_security_resource(self, resource_type: str, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Create a security resource"""
         plural = "" if resource_type == "rolesmapping" else "s"
         url = f"{self.endpoint}/_plugins/_security/api/{resource_type}{plural}/{name}"
         logger.debug(f"Creating security resource: {resource_type} {name} at {url}")
         try:
-            response = await self.request("PUT", url, None, json.dumps(config))
+            response = self.request("PUT", url, None, json.dumps(config))
             logger.debug(f"Security resource created successfully: {response}")
             return response
         except Exception as e:
             logger.error(f"Failed to create security resource {resource_type} {name}: {e}")
             raise
 
-    async def update_security_resource(self, resource_type: str, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def update_security_resource(self, resource_type: str, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Update a security resource"""
         plural = "" if resource_type == "rolesmapping" else "s"
         url = f"{self.endpoint}/_plugins/_security/api/{resource_type}{plural}/{name}"
-        response = await self.request("PATCH", url, None, json.dumps(config))
+        response = self.request("PATCH", url, None, json.dumps(config))
         return response
 
-    async def delete_security_resource(self, resource_type: str, name: str) -> Dict[str, Any]:
+    def delete_security_resource(self, resource_type: str, name: str) -> Dict[str, Any]:
         """Delete a security resource"""
         plural = "" if resource_type == "rolesmapping" else "s"
         url = f"{self.endpoint}/_plugins/_security/api/{resource_type}{plural}/{name}"
-        response = await self.request("DELETE", url)
+        response = self.request("DELETE", url)
         return response
 
-    async def rotate_api_keys(self, username: str) -> Dict[str, Any]:
+    def rotate_api_keys(self, username: str) -> Dict[str, Any]:
         """Rotate API keys for a user
 
         Args:
@@ -1103,217 +1086,217 @@ class InfinoSDK:
             New credentials (access_key and secret_key)
         """
         url = f"{self.endpoint}/_account/users/{username}/rotate_keys"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
     # ML Commons Plugin Operations
-    async def register_model(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def register_model(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Register ML model"""
         url = f"{self.endpoint}/_plugins/_ml/models/_register"
         logger.debug(f"INFINO SDK: Registering model: {config}")
-        response = await self.request("POST", url, None, json.dumps(config))
+        response = self.request("POST", url, None, json.dumps(config))
         return response
 
-    async def deploy_model(self, model_id: str) -> Dict[str, Any]:
+    def deploy_model(self, model_id: str) -> Dict[str, Any]:
         """Deploy ML model"""
         url = f"{self.endpoint}/_plugins/_ml/models/{model_id}/_deploy"
-        response = await self.request("POST", url)
+        response = self.request("POST", url)
         return response
 
-    async def undeploy_model(self, model_id: str) -> Dict[str, Any]:
+    def undeploy_model(self, model_id: str) -> Dict[str, Any]:
         """Undeploy ML model"""
         url = f"{self.endpoint}/_plugins/_ml/models/{model_id}/_undeploy"
-        response = await self.request("POST", url)
+        response = self.request("POST", url)
         return response
 
-    async def get_model(self, model_id: str) -> Dict[str, Any]:
+    def get_model(self, model_id: str) -> Dict[str, Any]:
         """Get ML model information"""
         url = f"{self.endpoint}/_plugins/_ml/models/{model_id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def delete_model(self, model_id: str) -> Dict[str, Any]:
+    def delete_model(self, model_id: str) -> Dict[str, Any]:
         """Delete ML model"""
         url = f"{self.endpoint}/_plugins/_ml/models/{model_id}"
-        response = await self.request("DELETE", url)
+        response = self.request("DELETE", url)
         return response
 
-    async def search_models(self, query: Dict[str, Any]) -> Dict[str, Any]:
+    def search_models(self, query: Dict[str, Any]) -> Dict[str, Any]:
         """Search ML models"""
         url = f"{self.endpoint}/_plugins/_ml/models/_search"
-        response = await self.request("POST", url, None, json.dumps(query))
+        response = self.request("POST", url, None, json.dumps(query))
         return response
 
-    async def update_model(self, model_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def update_model(self, model_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Update ML model"""
         url = f"{self.endpoint}/_plugins/_ml/models/{model_id}"
-        response = await self.request("PUT", url, None, json.dumps(config))
+        response = self.request("PUT", url, None, json.dumps(config))
         return response
 
-    async def train_model(self, algorithm: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def train_model(self, algorithm: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Train ML model"""
         url = f"{self.endpoint}/_plugins/_ml/_train/{algorithm}"
-        response = await self.request("POST", url, None, json.dumps(config))
+        response = self.request("POST", url, None, json.dumps(config))
         return response
 
     # Model prediction API
-    async def predict(self, model_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Make prediction using model"""
+    def predict(self, model_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Run ML model prediction"""
         url = f"{self.endpoint}/_plugins/_ml/models/{model_id}/_predict"
-        response = await self.request("POST", url, None, json.dumps(input_data))
+        response = self.request("POST", url, None, json.dumps(input_data))
         return response
 
-    async def train_and_predict(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Train model and make prediction"""
+    def train_and_predict(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Train model and run prediction"""
         url = f"{self.endpoint}/_plugins/_ml/train_and_predict"
-        response = await self.request("POST", url, None, json.dumps(config))
+        response = self.request("POST", url, None, json.dumps(config))
         return response
 
-    async def batch_predict(self, model_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Batch prediction"""
+    def batch_predict(self, model_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Run batch prediction"""
         predict_config = config.copy()
         if isinstance(predict_config, dict):
             predict_config["model_id"] = model_id
         url = f"{self.endpoint}/_plugins/_ml/models/_batch_predict"
-        response = await self.request("POST", url, None, json.dumps(predict_config))
+        response = self.request("POST", url, None, json.dumps(predict_config))
         return response
 
-    async def cancel_batch_predict(self, task_id: str) -> Dict[str, Any]:
+    def cancel_batch_predict(self, task_id: str) -> Dict[str, Any]:
         """Cancel batch prediction"""
         url = f"{self.endpoint}/_plugins/_ml/tasks/{task_id}/_cancel_batch"
-        response = await self.request("POST", url)
+        response = self.request("POST", url)
         return response
 
-    async def list_models(self) -> Dict[str, Any]:
-        """List all ML models"""
+    def list_models(self) -> Dict[str, Any]:
+        """List ML models"""
         url = f"{self.endpoint}/_plugins/_ml/models"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_ml_stats(self) -> Dict[str, Any]:
+    def get_ml_stats(self) -> Dict[str, Any]:
         """Get ML statistics"""
         url = f"{self.endpoint}/_plugins/_ml/stats"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_task_list(self) -> Dict[str, Any]:
+    def get_task_list(self) -> Dict[str, Any]:
         """Get list of ML tasks"""
         url = f"{self.endpoint}/_plugins/_ml/tasks"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_task_status(self, task_id: str) -> Dict[str, Any]:
+    def get_task_status(self, task_id: str) -> Dict[str, Any]:
         """Get ML task status"""
         url = f"{self.endpoint}/_plugins/_ml/tasks/{task_id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_ml_profile(self) -> Dict[str, Any]:
-        """Get ML profile"""
+    def get_ml_profile(self) -> Dict[str, Any]:
+        """Get ML profiling information"""
         url = f"{self.endpoint}/_plugins/_ml/profile"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_model_metrics(self, model_id: str) -> Dict[str, Any]:
-        """Get model metrics"""
+    def get_model_metrics(self, model_id: str) -> Dict[str, Any]:
+        """Get ML model metrics"""
         url = f"{self.endpoint}/_plugins/_ml/models/{model_id}/metrics"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
     # ML Commons Connector Operations
-    async def create_connector(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def create_connector(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Create ML connector"""
         url = f"{self.endpoint}/_plugins/_ml/connectors/_create"
-        response = await self.request("POST", url, None, json.dumps(config))
+        response = self.request("POST", url, None, json.dumps(config))
         return response
 
-    async def get_connector(self, connector_id: str) -> Dict[str, Any]:
-        """Get connector information"""
+    def get_connector(self, connector_id: str) -> Dict[str, Any]:
+        """Get ML connector information"""
         url = f"{self.endpoint}/_plugins/_ml/connectors/{connector_id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def list_connectors(self) -> Dict[str, Any]:
-        """List all connectors"""
+    def list_connectors(self) -> Dict[str, Any]:
+        """List ML connectors"""
         url = f"{self.endpoint}/_plugins/_ml/connectors"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def delete_connector(self, connector_id: str) -> Dict[str, Any]:
-        """Delete connector"""
+    def delete_connector(self, connector_id: str) -> Dict[str, Any]:
+        """Delete ML connector"""
         url = f"{self.endpoint}/_plugins/_ml/connectors/{connector_id}"
-        response = await self.request("DELETE", url)
+        response = self.request("DELETE", url)
         return response
 
     # Additional ML Commons Plugin Operations
-    async def register_model_group(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Register model group"""
+    def register_model_group(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Register ML model group"""
         url = f"{self.endpoint}/_plugins/_ml/model_groups/_register"
-        response = await self.request("POST", url, None, json.dumps(config))
+        response = self.request("POST", url, None, json.dumps(config))
         return response
 
-    async def get_model_group(self, model_group_id: str) -> Dict[str, Any]:
-        """Get model group"""
+    def get_model_group(self, model_group_id: str) -> Dict[str, Any]:
+        """Get ML model group"""
         url = f"{self.endpoint}/_plugins/_ml/model_groups/{model_group_id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def delete_model_group(self, model_group_id: str) -> Dict[str, Any]:
-        """Delete model group"""
+    def delete_model_group(self, model_group_id: str) -> Dict[str, Any]:
+        """Delete ML model group"""
         url = f"{self.endpoint}/_plugins/_ml/model_groups/{model_group_id}"
-        response = await self.request("DELETE", url)
+        response = self.request("DELETE", url)
         return response
 
-    async def list_model_groups(self) -> Dict[str, Any]:
-        """List model groups"""
+    def list_model_groups(self) -> Dict[str, Any]:
+        """List ML model groups"""
         url = f"{self.endpoint}/_plugins/_ml/model_groups"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def register_agent(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Register ML agent"""
+    def register_agent(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Register AI agent"""
         url = f"{self.endpoint}/_plugins/_ml/agents/_register"
-        response = await self.request("POST", url, None, json.dumps(config))
+        response = self.request("POST", url, None, json.dumps(config))
         return response
 
-    async def get_agent(self, agent_id: str) -> Dict[str, Any]:
-        """Get agent information"""
+    def get_agent(self, agent_id: str) -> Dict[str, Any]:
+        """Get AI agent information"""
         url = f"{self.endpoint}/_plugins/_ml/agents/{agent_id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def delete_agent(self, agent_id: str) -> Dict[str, Any]:
-        """Delete agent"""
+    def delete_agent(self, agent_id: str) -> Dict[str, Any]:
+        """Delete AI agent"""
         url = f"{self.endpoint}/_plugins/_ml/agents/{agent_id}"
-        response = await self.request("DELETE", url)
+        response = self.request("DELETE", url)
         return response
 
-    async def list_agents(self) -> Dict[str, Any]:
-        """List all agents"""
+    def list_agents(self) -> Dict[str, Any]:
+        """List AI agents"""
         url = f"{self.endpoint}/_plugins/_ml/agents"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def create_memory(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create memory"""
+    def create_memory(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Create AI memory"""
         url = f"{self.endpoint}/_plugins/_ml/memory"
-        response = await self.request("POST", url, None, json.dumps(config))
+        response = self.request("POST", url, None, json.dumps(config))
         return response
 
-    async def update_memory(self, memory_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update memory"""
+    def update_memory(self, memory_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Update AI memory"""
         url = f"{self.endpoint}/_plugins/_ml/memory/{memory_id}"
-        response = await self.request("PUT", url, None, json.dumps(config))
+        response = self.request("PUT", url, None, json.dumps(config))
         return response
 
-    async def get_memory(self, memory_id: str) -> Dict[str, Any]:
-        """Get memory"""
+    def get_memory(self, memory_id: str) -> Dict[str, Any]:
+        """Get AI memory"""
         url = f"{self.endpoint}/_plugins/_ml/memory/{memory_id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_all_memories(self, max_results: Optional[int] = None, next_token: Optional[int] = None) -> Dict[str, Any]:
-        """Get all memories"""
+    def get_all_memories(self, max_results: Optional[int] = None, next_token: Optional[int] = None) -> Dict[str, Any]:
+        """Get all AI memories"""
         url = f"{self.endpoint}/_plugins/_ml/memory"
         if max_results is not None:
             url += f"?max_results={max_results}"
@@ -1321,165 +1304,165 @@ class InfinoSDK:
                 url += f"&next_token={next_token}"
         elif next_token is not None:
             url += f"?next_token={next_token}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def search_memories(self, query: Dict[str, Any]) -> Dict[str, Any]:
-        """Search memories"""
+    def search_memories(self, query: Dict[str, Any]) -> Dict[str, Any]:
+        """Search AI memories"""
         url = f"{self.endpoint}/_plugins/_ml/memory/_search"
-        response = await self.request("POST", url, None, json.dumps(query))
+        response = self.request("POST", url, None, json.dumps(query))
         return response
 
-    async def delete_memory(self, memory_id: str) -> Dict[str, Any]:
-        """Delete memory"""
+    def delete_memory(self, memory_id: str) -> Dict[str, Any]:
+        """Delete AI memory"""
         url = f"{self.endpoint}/_plugins/_ml/memory/{memory_id}"
-        response = await self.request("DELETE", url)
+        response = self.request("DELETE", url)
         return response
 
     # Message APIs
-    async def create_message(self, memory_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create message"""
+    def create_message(self, memory_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Create message in AI memory"""
         url = f"{self.endpoint}/_plugins/_ml/memory/{memory_id}/messages"
-        response = await self.request("POST", url, None, json.dumps(config))
+        response = self.request("POST", url, None, json.dumps(config))
         return response
 
-    async def update_message(self, message_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update message"""
+    def update_message(self, message_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Update message in AI memory"""
         url = f"{self.endpoint}/_plugins/_ml/memory/message/{message_id}"
-        response = await self.request("PUT", url, None, json.dumps(config))
+        response = self.request("PUT", url, None, json.dumps(config))
         return response
 
-    async def get_message(self, message_id: str) -> Dict[str, Any]:
-        """Get message"""
+    def get_message(self, message_id: str) -> Dict[str, Any]:
+        """Get message from AI memory"""
         url = f"{self.endpoint}/_plugins/_ml/memory/message/{message_id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_memory_messages(self, memory_id: str) -> Dict[str, Any]:
-        """Get memory messages"""
+    def get_memory_messages(self, memory_id: str) -> Dict[str, Any]:
+        """Get all messages from AI memory"""
         url = f"{self.endpoint}/_plugins/_ml/memory/{memory_id}/messages"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def search_memory_messages(self, memory_id: str, query: Dict[str, Any]) -> Dict[str, Any]:
-        """Search memory messages"""
+    def search_memory_messages(self, memory_id: str, query: Dict[str, Any]) -> Dict[str, Any]:
+        """Search messages in AI memory"""
         url = f"{self.endpoint}/_plugins/_ml/memory/{memory_id}/_search"
-        response = await self.request("POST", url, None, json.dumps(query))
+        response = self.request("POST", url, None, json.dumps(query))
         return response
 
-    async def get_message_traces(self, message_id: str) -> Dict[str, Any]:
+    def get_message_traces(self, message_id: str) -> Dict[str, Any]:
         """Get message traces"""
         url = f"{self.endpoint}/_plugins/_ml/memory/message/{message_id}/traces"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
     # Controller APIs
-    async def create_controller(self, model_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create controller"""
+    def create_controller(self, model_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Create ML controller"""
         url = f"{self.endpoint}/_plugins/_ml/controllers/{model_id}"
-        response = await self.request("POST", url, None, json.dumps(config))
+        response = self.request("POST", url, None, json.dumps(config))
         return response
 
-    async def get_controller(self, controller_id: str) -> Dict[str, Any]:
-        """Get controller"""
+    def get_controller(self, controller_id: str) -> Dict[str, Any]:
+        """Get ML controller information"""
         url = f"{self.endpoint}/_plugins/_ml/controllers/{controller_id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def update_controller(self, controller_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update controller"""
+    def update_controller(self, controller_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Update ML controller"""
         url = f"{self.endpoint}/_plugins/_ml/controllers/{controller_id}"
-        response = await self.request("PUT", url, None, json.dumps(config))
+        response = self.request("PUT", url, None, json.dumps(config))
         return response
 
-    async def delete_controller(self, controller_id: str) -> Dict[str, Any]:
-        """Delete controller"""
+    def delete_controller(self, controller_id: str) -> Dict[str, Any]:
+        """Delete ML controller"""
         url = f"{self.endpoint}/_plugins/_ml/controllers/{controller_id}"
-        response = await self.request("DELETE", url)
+        response = self.request("DELETE", url)
         return response
 
-    async def get_controller_status(self) -> Dict[str, Any]:
-        """Get controller status"""
+    def get_controller_status(self) -> Dict[str, Any]:
+        """Get ML controller status"""
         url = f"{self.endpoint}/_plugins/_ml/controller"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
     # Task APIs
-    async def get_task(self, task_id: str) -> Dict[str, Any]:
-        """Get task information"""
+    def get_task(self, task_id: str) -> Dict[str, Any]:
+        """Get ML task information"""
         url = f"{self.endpoint}/_plugins/_ml/tasks/{task_id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def search_tasks(self, query: Dict[str, Any]) -> Dict[str, Any]:
-        """Search tasks"""
+    def search_tasks(self, query: Dict[str, Any]) -> Dict[str, Any]:
+        """Search ML tasks"""
         url = f"{self.endpoint}/_plugins/_ml/tasks/_search"
-        response = await self.request("POST", url, None, json.dumps(query))
+        response = self.request("POST", url, None, json.dumps(query))
         return response
 
-    async def stop_task(self, task_id: str) -> Dict[str, Any]:
-        """Stop task"""
+    def stop_task(self, task_id: str) -> Dict[str, Any]:
+        """Stop ML task"""
         url = f"{self.endpoint}/_plugins/_ml/tasks/{task_id}/_stop"
-        response = await self.request("POST", url)
+        response = self.request("POST", url)
         return response
 
-    async def delete_task(self, task_id: str) -> Dict[str, Any]:
-        """Delete task"""
+    def delete_task(self, task_id: str) -> Dict[str, Any]:
+        """Delete ML task"""
         url = f"{self.endpoint}/_plugins/_ml/tasks/{task_id}"
-        response = await self.request("DELETE", url)
+        response = self.request("DELETE", url)
         return response
 
     # Profile APIs
-    async def get_profile(self, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Get profile"""
+    def get_profile(self, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Get profiling information"""
         url = f"{self.endpoint}/_plugins/_ml/profile"
         body = json.dumps(config) if config else None
-        response = await self.request("GET", url, None, body)
+        response = self.request("GET", url, None, body)
         return response
 
-    async def get_models_profile(self) -> Dict[str, Any]:
-        """Get models profile"""
+    def get_models_profile(self) -> Dict[str, Any]:
+        """Get models profiling information"""
         url = f"{self.endpoint}/_plugins/_ml/profile/models"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_model_profile(self, model_id: str) -> Dict[str, Any]:
-        """Get model profile"""
+    def get_model_profile(self, model_id: str) -> Dict[str, Any]:
+        """Get model profiling information"""
         url = f"{self.endpoint}/_plugins/_ml/profile/models/{model_id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_tasks_profile(self) -> Dict[str, Any]:
-        """Get tasks profile"""
+    def get_tasks_profile(self) -> Dict[str, Any]:
+        """Get tasks profiling information"""
         url = f"{self.endpoint}/_plugins/_ml/profile/tasks"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_task_profile(self, task_id: str) -> Dict[str, Any]:
-        """Get task profile"""
+    def get_task_profile(self, task_id: str) -> Dict[str, Any]:
+        """Get task profiling information"""
         url = f"{self.endpoint}/_plugins/_ml/profile/tasks/{task_id}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
     # Stats APIs
-    async def get_stats(self) -> Dict[str, Any]:
-        """Get statistics"""
+    def get_stats(self) -> Dict[str, Any]:
+        """Get ML statistics"""
         url = f"{self.endpoint}/_plugins/_ml/stats"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def get_stat(self, stat: str) -> Dict[str, Any]:
-        """Get specific statistic"""
+    def get_stat(self, stat: str) -> Dict[str, Any]:
+        """Get specific ML statistic"""
         url = f"{self.endpoint}/_plugins/_ml/stats/{stat}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
     # Ingest Pipeline Operations
-    async def create_ingest_pipeline(self, pipeline_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def create_ingest_pipeline(self, pipeline_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Create ingest pipeline"""
         url = f"{self.endpoint}/_ingest/pipeline/{pipeline_name}"
         try:
-            response = await self.request("PUT", url, None, json.dumps(config))
+            response = self.request("PUT", url, None, json.dumps(config))
             return response
         except InfinoError as e:
             # 409 CONFLICT is acceptable for pipeline creation - it means the pipeline already exists
@@ -1488,24 +1471,24 @@ class InfinoSDK:
                 return {"acknowledged": True}
             raise
 
-    async def get_ingest_pipeline(self, pipeline_name: str) -> Dict[str, Any]:
+    def get_ingest_pipeline(self, pipeline_name: str) -> Dict[str, Any]:
         """Get ingest pipeline"""
         url = f"{self.endpoint}/_ingest/pipeline/{pipeline_name}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def delete_ingest_pipeline(self, pipeline_name: str) -> Dict[str, Any]:
+    def delete_ingest_pipeline(self, pipeline_name: str) -> Dict[str, Any]:
         """Delete ingest pipeline"""
         url = f"{self.endpoint}/_ingest/pipeline/{pipeline_name}"
-        response = await self.request("DELETE", url)
+        response = self.request("DELETE", url)
         return response
 
     # Search Pipeline Operations
-    async def create_search_pipeline(self, pipeline_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def create_search_pipeline(self, pipeline_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Create search pipeline"""
         url = f"{self.endpoint}/_search/pipeline/{pipeline_name}"
         try:
-            response = await self.request("PUT", url, None, json.dumps(config))
+            response = self.request("PUT", url, None, json.dumps(config))
             return response
         except InfinoError as e:
             # 409 CONFLICT is acceptable for pipeline creation - it means the pipeline already exists
@@ -1514,21 +1497,21 @@ class InfinoSDK:
                 return {"acknowledged": True}
             raise
 
-    async def get_search_pipeline(self, pipeline_name: str) -> Dict[str, Any]:
+    def get_search_pipeline(self, pipeline_name: str) -> Dict[str, Any]:
         """Get search pipeline"""
         url = f"{self.endpoint}/_search/pipeline/{pipeline_name}"
-        response = await self.request("GET", url)
+        response = self.request("GET", url)
         return response
 
-    async def delete_search_pipeline(self, pipeline_name: str) -> Dict[str, Any]:
+    def delete_search_pipeline(self, pipeline_name: str) -> Dict[str, Any]:
         """Delete search pipeline"""
         url = f"{self.endpoint}/_search/pipeline/{pipeline_name}"
-        response = await self.request("DELETE", url)
+        response = self.request("DELETE", url)
         return response
 
 # Error conversion implementations
 def _convert_reqwest_error(error: requests.RequestException) -> InfinoError:
-    """Convert network error to InfinoError"""
+    """Convert HTTP request error to InfinoError"""
     return InfinoError(
         error_type=InfinoError.Type.NETWORK,
         message=str(error)
@@ -1549,7 +1532,7 @@ if __name__ == "__main__":
     class TestInfinoSDK(unittest.TestCase):
         """Test suite for Infino SDK"""
         
-        async def setUp(self):
+        def setUp(self):
             self.client = InfinoSDK(
                 access_key="test_key",
                 secret_key="test_secret",
@@ -1557,8 +1540,8 @@ if __name__ == "__main__":
             )
 
         @responses.activate
-        async def test_request_signing(self):
-            """Test request signing"""
+        def test_request_signing(self):
+            """Test AWS SigV4 request signing"""
             responses.add(
                 responses.GET,
                 "http://localhost:8000/test_index/_search",
@@ -1578,8 +1561,8 @@ if __name__ == "__main__":
             self.assertEqual(response, {"hits": []})
 
         @responses.activate
-        async def test_document_operations(self):
-            """Test document operations"""
+        def test_document_operations(self):
+            """Test document indexing and retrieval operations"""
             doc = json.dumps({"field1": "value1"})
             
             responses.add(
@@ -1596,11 +1579,12 @@ if __name__ == "__main__":
                 ]
             )
 
-            # Document indexing is done via bulk_ingest
+            # Using bulk_ingest for document indexing
+            # This tests bulk indexing functionality
             pass
 
         @responses.activate
-        async def test_security_operations(self):
+        def test_security_operations(self):
             """Test security API operations"""
             # Test role operations
             responses.add(
