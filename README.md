@@ -7,16 +7,26 @@ Official Python SDK for [Infino](https://infino.ai), providing seamless access t
 
 This API is derived from OpenSearch, so most tools that work with OpenSearch should work with Infino.
 
-## Features
-
-- 🔐 **Automatic AWS SigV4 Authentication** - All requests are automatically signed
-- 🔄 **Async/Await Support** - Built on `aiohttp` for high performance
-- 🔌 **WebSocket Support** - Real-time bidirectional communication
-- 🔁 **Automatic Retries** - Configurable retry logic with exponential backoff
-- 🎯 **Type Hints** - Full type annotations for better IDE support
-- 📦 **Comprehensive API Coverage** - Search, SQL, ML, Security, and more
-
 ## Installation
+
+### From Source (Recommended until published to PyPI)
+
+```bash
+# Clone the repository
+git clone https://github.com/infinohq/infino-sdk.git
+cd infino-sdk
+
+# Install the package
+pip install -e .
+```
+
+### From GitHub (Direct)
+
+```bash
+pip install git+https://github.com/infinohq/infino-sdk.git
+```
+
+### From PyPI (Coming Soon)
 
 ```bash
 pip install infino-sdk
@@ -26,25 +36,20 @@ pip install infino-sdk
 
 ```python
 from infino_sdk import InfinoSDK
-import asyncio
 
-async def main():
-    # Create SDK instance with your credentials
-    async with InfinoSDK(
-        access_key="your_access_key",
-        secret_key="your_secret_key",
-        endpoint="https://api.infino.ws"
-    ) as sdk:
-        # Check connection
-        info = await sdk.ping()
-        print(f"Connected: {info}")
-        
-        # Execute a search
-        results = await sdk.search("my_index", '{"query": {"match_all": {}}}')
-        print(f"Found {len(results.get('hits', {}).get('hits', []))} documents")
-
-if __name__ == "__main__":
-asyncio.run(main())
+# Create SDK instance with your credentials
+with InfinoSDK(
+    access_key="your_access_key",
+    secret_key="your_secret_key",
+    endpoint="https://api.infino.ws"
+) as sdk:
+    # Check connection
+    info = sdk.ping()
+    print(f"Connected: {info}")
+    
+    # Execute a search
+    results = sdk.search("my_index", '{"query": {"match_all": {}}}')
+    print(f"Found {len(results.get('hits', {}).get('hits', []))} documents")
 ```
 
 ## Getting Your Credentials
@@ -61,8 +66,7 @@ asyncio.run(main())
 - [Basic Usage](#basic-usage)
 - [Search & Query](#search--query)
 - [Bulk Operations](#bulk-operations)
-- [Security Management](#security-management)
-- [ML & AI](#ml--ai)
+- [Permissions Management](#security-management)
 - [WebSocket Connections](#websocket-connections)
 - [Error Handling](#error-handling)
 - [Advanced Configuration](#advanced-configuration)
@@ -329,73 +333,7 @@ mappings = await sdk.list_role_mappings()
 await sdk.delete_role_mapping("dev_team_mapping")
 ```
 
-### ML & AI
-
-#### Model Management
-
-```python
-# Register a model
-model_config = {
-    "name": "sentence-transformer",
-    "version": "1.0",
-    "model_format": "TORCH_SCRIPT",
-    "model_type": "text_embedding",
-    "model_content_size_in_bytes": 1234567,
-    "model_content_hash_value": "abc123...",
-    "url": "https://artifacts.example.com/model.zip"
-}
-result = await sdk.register_model(model_config)
-model_id = result["model_id"]
-
-# Deploy model
-await sdk.deploy_model(model_id)
-
-# Get model info
-model_info = await sdk.get_model(model_id)
-
-# Make predictions
-input_data = {
-    "text_docs": ["This is a sample text", "Another sample text"]
-}
-predictions = await sdk.predict(model_id, input_data)
-
-# Undeploy model
-await sdk.undeploy_model(model_id)
-
-# Delete model
-await sdk.delete_model(model_id)
-```
-
-#### ML Connectors
-
-```python
-# Create connector to external ML service
-connector_config = {
-    "name": "OpenAI GPT-4",
-    "description": "OpenAI GPT-4 connector",
-    "version": "1",
-    "protocol": "http",
-    "parameters": {
-        "endpoint": "api.openai.com",
-        "model": "gpt-4"
-    },
-    "credential": {
-        "openai_key": "sk-..."
-    }
-}
-result = await sdk.create_connector(connector_config)
-connector_id = result["connector_id"]
-
-# Use connector with model
-model_config = {
-    "name": "GPT-4 Model",
-    "function_name": "remote",
-    "connector_id": connector_id
-}
-result = await sdk.register_model(model_config)
-```
-
-### WebSocket Connections
+### Natural Language
 
 ```python
 async with InfinoSDK(access_key, secret_key, endpoint) as sdk:

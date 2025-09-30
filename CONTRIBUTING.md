@@ -22,13 +22,13 @@ We are committed to providing a welcoming and inclusive experience for everyone.
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/infino-sdk-python.git
+   git clone https://github.com/YOUR_USERNAME/infino-sdk.git
    cd infino-sdk-python
    ```
 
 3. **Add the upstream repository**:
    ```bash
-   git remote add upstream https://github.com/infinohq/infino-sdk-python.git
+   git remote add upstream https://github.com/infinohq/infino-sdk.git
    ```
 
 ## Development Setup
@@ -331,9 +331,8 @@ New features should include working examples in the `examples/` directory:
 
 ## Questions?
 
-- 💬 Join our [Discord community](https://discord.gg/infino)
-- 📧 Email: dev@infino.ai
-- 🐛 [Open an issue](https://github.com/infinohq/infino-sdk-python/issues)
+- 📧 Email: info@infino.ai
+- 🐛 [Open an issue](https://github.com/infinohq/infino-sdk/issues)
 
 ## License
 
