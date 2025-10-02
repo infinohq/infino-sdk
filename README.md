@@ -3,7 +3,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Official Python SDK for [Infino](https://infino.ai), providing seamless access to search, analytics, ML, and AI capabilities with AWS SigV4 authentication.
+Official Python SDK for [Infino](https://infino.ai), providing seamless access to search, analytics, and AI capabilities with AWS SigV4 authentication.
 
 This API is derived from OpenSearch, so most tools that work with OpenSearch should work with Infino.
 
@@ -462,9 +462,8 @@ mypy infino_sdk
 ## Support
 
 - 📧 Email: support@infino.ai
-- 💬 Discord: [discord.gg/infino](https://discord.gg/infino)
 - 📖 Documentation: [docs.infino.ai](https://docs.infino.ai)
-- 🐛 Issues: [GitHub Issues](https://github.com/infinohq/infino-sdk-python/issues)
+- 🐛 Issues: [GitHub Issues](https://github.com/infinohq/infino-sdk/issues)
 
 ## License
 
