@@ -9,7 +9,6 @@ This example demonstrates how to:
 """
 
 import time
-from datetime import datetime, timezone
 from infino_sdk import InfinoSDK
 
 

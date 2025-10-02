@@ -9,7 +9,6 @@ This example demonstrates:
 """
 
 import os
-import time
 from infino_sdk import InfinoSDK, InfinoError, RetryConfig
 
 
