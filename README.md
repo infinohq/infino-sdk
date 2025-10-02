@@ -38,18 +38,19 @@ pip install infino-sdk
 from infino_sdk import InfinoSDK
 
 # Create SDK instance with your credentials
-with InfinoSDK(
+sdk = InfinoSDK(
     access_key="your_access_key",
     secret_key="your_secret_key",
     endpoint="https://api.infino.ws"
-) as sdk:
-    # Check connection
-    info = sdk.ping()
-    print(f"Connected: {info}")
-    
-    # Execute a search
-    results = sdk.search("my_index", '{"query": {"match_all": {}}}')
-    print(f"Found {len(results.get('hits', {}).get('hits', []))} documents")
+)
+
+# Check connection
+info = sdk.ping()
+print(f"Connected: {info}")
+
+# Execute a search
+results = sdk.search("my_index", '{"query": {"match_all": {}}}')
+print(f"Found {len(results.get('hits', {}).get('hits', []))} documents")
 ```
 
 ## Getting Your Credentials
@@ -78,46 +79,39 @@ with InfinoSDK(
 ```python
 from infino_sdk import InfinoSDK
 
-# Using context manager (recommended)
-async with InfinoSDK(access_key, secret_key, endpoint) as sdk:
-    await sdk.ping()
-
-# Manual session management
+# Create instance and call synchronously
 sdk = InfinoSDK(access_key, secret_key, endpoint)
-await sdk._ensure_session()
-try:
-    await sdk.ping()
-finally:
-    await sdk.close()
+sdk.ping()
 ```
 
 #### Index Management
 
 ```python
-async with InfinoSDK(access_key, secret_key, endpoint) as sdk:
-    # Create index
-    await sdk.create_index("products")
-    
-    # Create index with custom mapping
-    mapping = {
-        "mappings": {
-            "properties": {
-                "title": {"type": "text"},
-                "price": {"type": "float"},
-                "created_at": {"type": "date"}
-            }
+sdk = InfinoSDK(access_key, secret_key, endpoint)
+
+# Create index
+sdk.create_index("products")
+
+# Create index with custom mapping
+mapping = {
+    "mappings": {
+        "properties": {
+            "title": {"type": "text"},
+            "price": {"type": "float"},
+            "created_at": {"type": "date"}
         }
     }
-    await sdk.create_index_with_mapping("products_v2", mapping)
-    
-    # Get index info
-    info = await sdk.get_index("products")
-    
-    # List all indices
-    indices = await sdk.get_cat_indices()
+}
+sdk.create_index_with_mapping("products_v2", mapping)
 
-    # Delete index
-    await sdk.delete_index("old_products")
+# Get index info
+info = sdk.get_index("products")
+
+# List all indices
+indices = sdk.get_cat_indices()
+
+# Delete index
+sdk.delete_index("old_products")
 ```
 
 ### Search & Query
@@ -127,11 +121,11 @@ async with InfinoSDK(access_key, secret_key, endpoint) as sdk:
 ```python
 # Match all query
 query = '{"query": {"match_all": {}}}'
-results = await sdk.search("products", query)
+results = sdk.search("products", query)
 
 # Term query
 query = '{"query": {"term": {"category": "electronics"}}}'
-results = await sdk.search("products", query)
+results = sdk.search("products", query)
 
 # Complex query with aggregations
 query = '''
@@ -156,43 +150,43 @@ query = '''
   }
 }
 '''
-results = await sdk.search("products", query)
+results = sdk.search("products", query)
 ```
 
 #### AI-Powered Search
 
 ```python
 # Natural language search
-results = await sdk.search_ai("products", "find me affordable smartphones under $500")
+results = sdk.search_ai("products", "find me affordable smartphones under $500")
 ```
 
 #### SQL Queries
 
 ```python
 # Execute SQL query
-results = await sdk.sql("SELECT * FROM products WHERE price > 100 ORDER BY created_at DESC LIMIT 10")
+results = sdk.sql("SELECT * FROM products WHERE price > 100 ORDER BY created_at DESC LIMIT 10")
 
 # With aggregations
-results = await sdk.sql("SELECT category, AVG(price) as avg_price FROM products GROUP BY category")
+results = sdk.sql("SELECT category, AVG(price) as avg_price FROM products GROUP BY category")
 ```
 
 #### Document Operations
 
 ```python
 # Get document by ID
-doc = await sdk.get_document("products", "product_123")
+doc = sdk.get_document("products", "product_123")
 
 # Get document source only
-source = await sdk.get_source("products", "product_123")
+source = sdk.get_source("products", "product_123")
 
 # Check if document exists
-exists = await sdk.document_exists("products", "product_123")
+exists = sdk.document_exists("products", "product_123")
 
 # Count documents
-count = await sdk.count("products", '{"query": {"term": {"category": "electronics"}}}')
+count = sdk.count("products", '{"query": {"term": {"category": "electronics"}}}')
 
 # Delete by query
-result = await sdk.delete_by_query("products", '{"query": {"range": {"created_at": {"lt": "2023-01-01"}}}}')
+result = sdk.delete_by_query("products", '{"query": {"range": {"created_at": {"lt": "2023-01-01"}}}}')
 ```
 
 ### Bulk Operations
@@ -211,7 +205,7 @@ bulk_data = '''
 {"delete": {"_id": "4"}}
 '''
 
-result = await sdk.bulk_ingest("products", bulk_data)
+result = sdk.bulk_ingest("products", bulk_data)
 print(f"Indexed {result.get('items', [])} documents")
 ```
 
@@ -220,17 +214,17 @@ print(f"Indexed {result.get('items', [])} documents")
 ```python
 # Prometheus-style metrics
 metrics_data = 'http_requests_total{method="GET",status="200"} 1234 1609459200000'
-await sdk.metrics("metrics_index", metrics_data)
+sdk.metrics("metrics_index", metrics_data)
 ```
 
 #### PromQL Queries
 
 ```python
 # Instant query
-result = await sdk.prom_ql_query('http_requests_total{status="200"}')
+result = sdk.prom_ql_query('http_requests_total{status="200"}')
 
 # Range query
-result = await sdk.prom_ql_query_range(
+result = sdk.prom_ql_query_range(
     query='rate(http_requests_total[5m])',
     start=1609459200,
     end=1609545600,
@@ -238,10 +232,10 @@ result = await sdk.prom_ql_query_range(
 )
 
 # Get labels
-labels = await sdk.prom_ql_labels()
+labels = sdk.prom_ql_labels()
 
 # Get label values
-values = await sdk.prom_ql_label_values("method")
+values = sdk.prom_ql_label_values("method")
 ```
 
 ### Security Management

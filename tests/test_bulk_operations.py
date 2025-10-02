@@ -7,13 +7,12 @@ from infino_sdk.lib import InfinoSDK, InfinoError
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_bulk_ingest_success(sdk_with_mock_session, mock_response, sample_bulk_response):
+def test_bulk_ingest_success(sdk_with_mock_session, mock_response, sample_bulk_response):
     """Test successful bulk ingest"""
     sdk = sdk_with_mock_session
     
     response = mock_response(200, sample_bulk_response)
-    sdk.session.request.return_value.__aenter__.return_value = response
+    sdk.session.request.return_value = response
     
     bulk_data = '''
 {"index": {"_id": "1"}}
@@ -22,15 +21,14 @@ async def test_bulk_ingest_success(sdk_with_mock_session, mock_response, sample_
 {"name": "Product 2", "price": 49.99}
 '''
     
-    result = await sdk.bulk_ingest("test_index", bulk_data)
+    result = sdk.bulk_ingest("test_index", bulk_data)
     
     assert result["errors"] is False
     assert len(result["items"]) == 2
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_bulk_ingest_with_errors(sdk_with_mock_session, mock_response):
+def test_bulk_ingest_with_errors(sdk_with_mock_session, mock_response):
     """Test bulk ingest with some failures"""
     sdk = sdk_with_mock_session
     
@@ -62,7 +60,7 @@ async def test_bulk_ingest_with_errors(sdk_with_mock_session, mock_response):
     }
     
     response = mock_response(200, bulk_response)
-    sdk.session.request.return_value.__aenter__.return_value = response
+    sdk.session.request.return_value = response
     
     bulk_data = '''
 {"index": {"_id": "1"}}
@@ -71,32 +69,30 @@ async def test_bulk_ingest_with_errors(sdk_with_mock_session, mock_response):
 {"invalid": "data"}
 '''
     
-    result = await sdk.bulk_ingest("test_index", bulk_data)
+    result = sdk.bulk_ingest("test_index", bulk_data)
     
     assert result["errors"] is True
     assert len(result["items"]) == 2
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_bulk_ingest_auto_add_newline(sdk_with_mock_session, mock_response, sample_bulk_response):
+def test_bulk_ingest_auto_add_newline(sdk_with_mock_session, mock_response, sample_bulk_response):
     """Test that bulk_ingest adds newline if missing"""
     sdk = sdk_with_mock_session
     
     response = mock_response(200, sample_bulk_response)
-    sdk.session.request.return_value.__aenter__.return_value = response
+    sdk.session.request.return_value = response
     
     # Data without trailing newline
     bulk_data = '{"index": {"_id": "1"}}\n{"name": "Product 1"}'
     
-    result = await sdk.bulk_ingest("test_index", bulk_data)
+    result = sdk.bulk_ingest("test_index", bulk_data)
     
     assert result["errors"] is False
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_bulk_update(sdk_with_mock_session, mock_response):
+def test_bulk_update(sdk_with_mock_session, mock_response):
     """Test bulk update operations"""
     sdk = sdk_with_mock_session
     
@@ -117,22 +113,21 @@ async def test_bulk_update(sdk_with_mock_session, mock_response):
     }
     
     response = mock_response(200, bulk_response)
-    sdk.session.request.return_value.__aenter__.return_value = response
+    sdk.session.request.return_value = response
     
     bulk_data = '''
 {"update": {"_id": "1"}}
 {"doc": {"price": 39.99}}
 '''
     
-    result = await sdk.bulk_ingest("test_index", bulk_data)
+    result = sdk.bulk_ingest("test_index", bulk_data)
     
     assert result["errors"] is False
     assert result["items"][0]["update"]["result"] == "updated"
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_bulk_delete(sdk_with_mock_session, mock_response):
+def test_bulk_delete(sdk_with_mock_session, mock_response):
     """Test bulk delete operations"""
     sdk = sdk_with_mock_session
     
@@ -153,11 +148,11 @@ async def test_bulk_delete(sdk_with_mock_session, mock_response):
     }
     
     response = mock_response(200, bulk_response)
-    sdk.session.request.return_value.__aenter__.return_value = response
+    sdk.session.request.return_value = response
     
     bulk_data = '{"delete": {"_id": "1"}}\n'
     
-    result = await sdk.bulk_ingest("test_index", bulk_data)
+    result = sdk.bulk_ingest("test_index", bulk_data)
     
     assert result["errors"] is False
     assert result["items"][0]["delete"]["result"] == "deleted"

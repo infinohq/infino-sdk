@@ -7,16 +7,15 @@ from infino_sdk.lib import InfinoSDK, InfinoError
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_search_success(sdk_with_mock_session, mock_response, sample_search_response):
+def test_search_success(sdk_with_mock_session, mock_response, sample_search_response):
     """Test successful search"""
     sdk = sdk_with_mock_session
     
     # Mock the response
     response = mock_response(200, sample_search_response)
-    sdk.session.request.return_value.__aenter__.return_value = response
+    sdk.session.request.return_value = response
     
-    result = await sdk.search("test_index", '{"query": {"match_all": {}}}')
+    result = sdk.search("test_index", '{"query": {"match_all": {}}}')
     
     assert "hits" in result
     assert result["hits"]["total"]["value"] == 100
@@ -24,53 +23,49 @@ async def test_search_success(sdk_with_mock_session, mock_response, sample_searc
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_search_not_found(sdk_with_mock_session, mock_response):
+def test_search_not_found(sdk_with_mock_session, mock_response):
     """Test search with non-existent index"""
     sdk = sdk_with_mock_session
     
     response = mock_response(404, text="index_not_found_exception")
-    sdk.session.request.return_value.__aenter__.return_value = response
+    sdk.session.request.return_value = response
     
     with pytest.raises(InfinoError) as exc_info:
-        await sdk.search("nonexistent", '{"query": {"match_all": {}}}')
+        sdk.search("nonexistent", '{"query": {"match_all": {}}}')
     
     assert exc_info.value.status_code() == 404
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_search_ai(sdk_with_mock_session, mock_response, sample_search_response):
+def test_search_ai(sdk_with_mock_session, mock_response, sample_search_response):
     """Test AI-powered search"""
     sdk = sdk_with_mock_session
     
     response = mock_response(200, sample_search_response)
-    sdk.session.request.return_value.__aenter__.return_value = response
+    sdk.session.request.return_value = response
     
-    result = await sdk.search_ai("test_index", "find me documents about testing")
+    result = sdk.search_ai("test_index", "find me documents about testing")
     
     assert "hits" in result
     assert isinstance(result["hits"], dict)
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_count(sdk_with_mock_session, mock_response):
+def test_count(sdk_with_mock_session, mock_response):
     """Test document count"""
     sdk = sdk_with_mock_session
     
     count_response = {"count": 42}
     response = mock_response(200, count_response)
-    sdk.session.request.return_value.__aenter__.return_value = response
+    sdk.session.request.return_value = response
     
-    result = await sdk.count("test_index")
+    result = sdk.count("test_index")
     
     assert result["count"] == 42
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_msearch(sdk_with_mock_session, mock_response):
+def test_msearch(sdk_with_mock_session, mock_response):
     """Test multi-search"""
     sdk = sdk_with_mock_session
     
@@ -81,7 +76,7 @@ async def test_msearch(sdk_with_mock_session, mock_response):
         ]
     }
     response = mock_response(200, msearch_response)
-    sdk.session.request.return_value.__aenter__.return_value = response
+    sdk.session.request.return_value = response
     
     queries = '''
     {"index": "index1"}
@@ -90,7 +85,7 @@ async def test_msearch(sdk_with_mock_session, mock_response):
     {"query": {"match_all": {}}}
     '''
     
-    result = await sdk.msearch(queries)
+    result = sdk.msearch(queries)
     
     assert "responses" in result
     assert len(result["responses"]) == 2

@@ -8,10 +8,10 @@ This example demonstrates:
 - Best practices for large datasets
 """
 
-import asyncio
 import json
 import os
-from infino_sdk.lib import InfinoSDK, InfinoError
+import time
+from infino_sdk import InfinoSDK, InfinoError
 
 
 def generate_bulk_data(num_docs=1000):
@@ -40,13 +40,13 @@ def generate_bulk_data(num_docs=1000):
     return '\n'.join(bulk_lines) + '\n'
 
 
-async def main():
+def main():
     access_key = os.getenv("INFINO_ACCESS_KEY", "your_access_key")
     secret_key = os.getenv("INFINO_SECRET_KEY", "your_secret_key")
     endpoint = os.getenv("INFINO_ENDPOINT", "https://api.infino.ws")
 
-    async with InfinoSDK(access_key, secret_key, endpoint) as sdk:
-        print("✅ Connected to Infino")
+    sdk = InfinoSDK(access_key, secret_key, endpoint)
+    print("✅ Connected to Infino")
         
         index_name = "bulk_demo"
         
@@ -68,7 +68,7 @@ async def main():
         }
         
         try:
-            await sdk.create_index_with_mapping(index_name, mapping)
+            sdk.create_index_with_mapping(index_name, mapping)
             print(f"✅ Index created successfully")
         except InfinoError as e:
             if e.status_code() == 409:
@@ -88,7 +88,7 @@ async def main():
             bulk_data = generate_bulk_data(batch_size)
             
             try:
-                result = await sdk.bulk_ingest(index_name, bulk_data)
+                result = sdk.bulk_ingest(index_name, bulk_data)
                 
                 # Check for errors
                 if result.get("errors"):
@@ -110,16 +110,16 @@ async def main():
         
         # Verify indexing
         print(f"\n🔍 Verifying indexed documents...")
-        await asyncio.sleep(1)  # Wait for refresh
+        time.sleep(1)  # Wait for refresh
         
-        count_result = await sdk.count(index_name)
+        count_result = sdk.count(index_name)
         total_count = count_result.get("count", 0)
         print(f"✅ Total documents indexed: {total_count}")
         
         # Sample query to verify data
         print(f"\n📊 Sample query results:")
         query = '{"query": {"match_all": {}}, "size": 3}'
-        results = await sdk.search(index_name, query)
+        results = sdk.search(index_name, query)
         
         for hit in results.get("hits", {}).get("hits", []):
             source = hit["_source"]
@@ -136,7 +136,7 @@ async def main():
 {"doc": {"price": 199.99, "featured": true}}
 '''
         
-        result = await sdk.bulk_ingest(index_name, update_data)
+        result = sdk.bulk_ingest(index_name, update_data)
         print(f"✅ Updated {len(result.get('items', []))} documents")
         
         # Bulk delete example
@@ -146,9 +146,9 @@ async def main():
 {"delete": {"_id": "4998"}}
 '''
         
-        result = await sdk.bulk_ingest(index_name, delete_data)
+        result = sdk.bulk_ingest(index_name, delete_data)
         print(f"✅ Deleted {len(result.get('items', []))} documents")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

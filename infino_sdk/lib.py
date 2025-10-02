@@ -1,3 +1,7 @@
+"""
+Infino SDK for Python
+"""
+
 import hashlib
 import hmac
 import json
@@ -56,13 +60,13 @@ def trace(self, message, *args, **kwargs):
 logging.Logger.trace = trace
 
 # Timeouts (in milliseconds unless specified)
-REQUEST_TIMEOUT_SECS = 180 # 180 seconds
-RETRY_INITIAL_INTERVAL = 1000  # Default initial retry interval (1 second)
-RETRY_MAX_INTERVAL = 15000  # Maximum retry interval (15 seconds)
-RETRY_MAX_ELAPSED_TIME = 90000  # Maximum elapsed time for retries (90 seconds)
+REQUEST_TIMEOUT_SECS = 180
+RETRY_INITIAL_INTERVAL = 1000
+RETRY_MAX_INTERVAL = 15000
+RETRY_MAX_ELAPSED_TIME = 90000
 
 class InfinoError(Exception):
-    """Exception raised for Infino SDK errors"""
+    """SDK error wrapper"""
     class Type(Enum):
         REQUEST = "request"
         NETWORK = "network"
@@ -86,7 +90,7 @@ class RetryConfig:
         self.initial_interval = RETRY_INITIAL_INTERVAL  # milliseconds
         self.max_interval = RETRY_MAX_INTERVAL    # milliseconds
         self.max_elapsed_time = RETRY_MAX_ELAPSED_TIME  # milliseconds
-        self.max_retries = 3  # Default max retries
+        self.max_retries = 3
 
 class SignatureComponents:
     def __init__(self, access_key: str, request_date: str, request_datetime: str):
@@ -106,7 +110,7 @@ class InfinoSDK:
         self.secret_key = secret_key
         self.endpoint = endpoint.rstrip('/')
         self.retry_config = retry_config or RetryConfig()
-
+        
         # AWS SigV4 parameters
         self.region = "us-east-1"
         self.service = "es"  # OpenSearch service
@@ -126,7 +130,7 @@ class InfinoSDK:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    def websocket_connect(self, path: str, headers: Optional[Dict[str, str]] = None):
+    async def websocket_connect(self, path: str, headers: Optional[Dict[str, str]] = None):
         """Connect to WebSocket endpoint with SigV4 query parameter authentication"""
         parsed = urlparse(self.endpoint)
         ws_proto = "wss" if parsed.scheme == "https" else "ws"
@@ -142,7 +146,7 @@ class InfinoSDK:
         credential = f"{self.access_key}/{date_stamp}/{self.region}/{self.service}/aws4_request"
         signed_headers = 'host'
 
-        # Build query parameters for signing
+        # Build query parameters (without signature yet)
         query_params = [
             ('X-Amz-Algorithm', algorithm),
             ('X-Amz-Credential', credential),
@@ -156,14 +160,14 @@ class InfinoSDK:
         # URL encode parameters
         canonical_querystring = '&'.join([f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}" for k, v in query_params])
 
-        # Create canonical request for AWS SigV4
+        # Create canonical request
         canonical_uri = path
         canonical_headers = f"host:{host}\n"
         payload_hash = hashlib.sha256(b'').hexdigest()  # Empty string hash for WebSocket
 
         canonical_request = f"GET\n{canonical_uri}\n{canonical_querystring}\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
 
-        # Create string to sign for AWS SigV4
+        # Create string to sign
         scope = f"{date_stamp}/{self.region}/{self.service}/aws4_request"
         canonical_request_hash = hashlib.sha256(canonical_request.encode()).hexdigest()
         string_to_sign = f"{algorithm}\n{amz_date}\n{scope}\n{canonical_request_hash}"
@@ -177,11 +181,11 @@ class InfinoSDK:
 
         # Connect with optional additional headers (but auth is in query params)
         if headers:
-            return websockets.connect(ws_url, additional_headers=headers.items())
-        return websockets.connect(ws_url)
+            return await websockets.connect(ws_url, additional_headers=headers.items())
+        return await websockets.connect(ws_url)
 
     def request(self, method: str, url: str, headers: Optional[Dict[str, str]] = None, body: Optional[str] = None, params: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-        """Execute an HTTP request with AWS SigV4 authentication"""
+        """Build, sign, and execute an HTTP request"""
 
         logger.debug(f"INFINO SDK: Making {method} request to {url}")
 
@@ -329,7 +333,7 @@ class InfinoSDK:
         raise InfinoError(InfinoError.Type.REQUEST, "Max retries exceeded", 0, url)
 
     def sign_request(self, request: requests.Request, timestamp: datetime) -> requests.Request:
-        """Sign an HTTP request using AWS Signature Version 4"""
+        """Sign request using AWS SigV4"""
         request_datetime = timestamp.strftime(DATE_FORMAT)
         request_date = timestamp.strftime(SHORT_DATE_FORMAT)
 
@@ -386,7 +390,7 @@ class InfinoSDK:
         sorted_headers = sorted(signed_headers)
         signed_headers_str = ";".join(sorted_headers)
 
-        # Format authorization header for AWS SigV4
+        # Format auth header exactly as AWS expects
         # Include a space after each comma
         auth_header = f"{ALGORITHM} {CREDENTIAL_HEADER}={components.access_key}/{components.request_date}/{REGION}/{SIGNING_NAME}/{TERMINATION}, {SIGNED_HEADERS_HEADER}={signed_headers_str}, {SIGNATURE_HEADER}={signature}"
 
@@ -398,7 +402,7 @@ class InfinoSDK:
         return request
 
     def create_canonical_request(self, request: requests.Request, signed_headers: list) -> str:
-        """Create canonical request for AWS SigV4 signing"""
+        """Create canonical request for SigV4"""
         # 1. HTTP Method
         method = request.method.upper()
 
@@ -449,56 +453,13 @@ class InfinoSDK:
         logger.debug(f"SIGN REQUEST: Canonical request:\n{canonical_request}")
         return canonical_request
 
-    def execute_request(self, request: requests.Request) -> requests.Response:
-        """Execute HTTP request and handle response"""
-        @backoff.on_exception(
-            backoff.expo,
-            (requests.exceptions.RequestException, InfinoError),
-            max_tries=None,  # Unlimited retries
-            max_value=self.retry_config.max_interval,
-            base=self.retry_config.initial_interval,
-            giveup=lambda e: (
-                isinstance(e, InfinoError) and 400 <= e.status_code() < 500 or  # Don't retry any 4xx
-                isinstance(e, requests.exceptions.RequestException) and 
-                (400 <= getattr(e.response, 'status_code', 0) < 500) or  # Don't retry 4xx errors
-                "Connection refused" in str(e)
-            )
-        )
-        def do_request():
-            response = self.session.send(request.prepare())
-            status = response.status_code
-
-            if response.ok:
-                return response
-
-            if 400 <= status < 500:  # All 4xx errors
-                message = response.text
-                if status == 404:
-                    logger.warning(f"Resource not found: {message}")
-                elif status == 403:
-                    logger.warning(f"Permission denied (403): {message}")
-                elif status == 401:
-                    logger.warning(f"Unauthorized (401): {message}")
-                else:
-                    logger.error(f"Client error {status}: {message}")
-                raise InfinoError(InfinoError.Type.REQUEST, message, status, request.url)
-
-            if 500 <= status < 600:
-                message = response.text
-                logger.error(f"INFINO SDK: Server error {status}: {message}")
-                raise InfinoError(InfinoError.Type.REQUEST, message, status, request.url)
-
-            message = response.text
-            raise InfinoError(InfinoError.Type.REQUEST, message, status, request.url)
-
-        return do_request()
 
     def hmac_sha256(self, key: bytes, data: bytes) -> bytes:
-        """Compute HMAC-SHA256"""
+        """Calculate HMAC-SHA256"""
         return hmac.new(key, data, hashlib.sha256).digest()
 
     def derive_signing_key(self, date: str) -> bytes:
-        """Derive AWS SigV4 signing key"""
+        """Derive SigV4 signing key from secret and date"""
         logger.debug("SIGN REQUEST: Starting key derivation")
         logger.debug(f"SIGN REQUEST: Date: {date}")
         logger.debug(f"SIGN REQUEST: Secret key: {self.secret_key}")
@@ -507,7 +468,7 @@ class InfinoSDK:
         logger.debug(f"SIGN REQUEST: SIGNING_NAME: {SIGNING_NAME}")
         logger.debug(f"SIGN REQUEST: TERMINATION: {TERMINATION}")
 
-        # Format the key string exactly as the server does - must match hmac_sha256 in signatures.rs
+        # Format the key string exactly as the server does
         key_string = f"{KEY_PREFIX}{self.secret_key}"
         
         # Step 1: kDate = HMAC(KEY_PREFIX + secret_key, date)
@@ -532,7 +493,7 @@ class InfinoSDK:
         return signing_key
 
     def calculate_signature(self, signing_key: bytes, string_to_sign: str) -> str:
-        """Calculate AWS SigV4 signature"""
+        """Calculate signature from key and string to sign"""
         logger.debug("SIGN REQUEST: Calculating signature")
         logger.debug(f"SIGN REQUEST: Signing key (hex): {signing_key.hex()}")
         logger.debug(f"SIGN REQUEST: String to sign:\n{string_to_sign}")
@@ -544,7 +505,7 @@ class InfinoSDK:
         return signature
 
     def create_string_to_sign(self, canonical_request: str, components: SignatureComponents) -> str:
-        """Create string to sign for AWS SigV4"""
+        """Create SigV4 string to sign"""
         credential_scope = f"{components.request_date}/{REGION}/{SIGNING_NAME}/{TERMINATION}"
         
         string_to_sign = (
@@ -558,7 +519,7 @@ class InfinoSDK:
         return string_to_sign
 
     def normalize_query(self, query: str) -> str:
-        """Normalize query parameters for AWS SigV4"""
+        """Normalize query parameters"""
         if not query:
             return ""
 
@@ -575,7 +536,7 @@ class InfinoSDK:
         return "&".join(f"{k}={v}" for k, v in params)
 
     def uri_encode(self, s: str) -> str:
-        """URL encode string for AWS SigV4"""
+        """Percent-encode string for URI"""
         encoded = ""
         for byte in s.encode('utf-8'):
             if (byte >= ord('A') and byte <= ord('Z')) or \
@@ -590,7 +551,7 @@ class InfinoSDK:
 
     # Index Operations
     def create_index(self, index: str) -> Dict[str, Any]:
-        """Create a new index"""
+        """Create an index"""
         url = f"{self.endpoint}/{index}"
         try:
             response = self.request("PUT", url)
@@ -603,7 +564,7 @@ class InfinoSDK:
             raise
 
     def create_index_with_mapping(self, index: str, mapping: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new index with explicit mapping"""
+        """Create an index with mapping"""
         url = f"{self.endpoint}/{index}"
         try:
             response = self.request("PUT", url, None, json.dumps(mapping))
@@ -627,7 +588,6 @@ class InfinoSDK:
         response = self.request("GET", url)
         return response
 
-
     def get_index_settings(self, index: str) -> Dict[str, Any]:
         """Get index settings"""
         url = f"{self.endpoint}/{index}/_settings"
@@ -636,7 +596,7 @@ class InfinoSDK:
 
     # Document Operations
     def get_document(self, index: str, id: str) -> Dict[str, Any]:
-        """Get a document by ID"""
+        """Get a document by id"""
         url = f"{self.endpoint}/{index}/doc/{id}"
         response = self.request("GET", url)
         return response
@@ -644,26 +604,19 @@ class InfinoSDK:
 
     # Search Operations
     def search(self, index: str, query: str) -> Dict[str, Any]:
-        """Execute a search query"""
+        """Search an index"""
         url = f"{self.endpoint}/{index}/_search"
         response = self.request("GET", url, None, query)
         return response
 
-    def search_ai(self, index: str, query_text: str) -> Dict[str, Any]:
-        """Execute AI-powered semantic search"""
-        url = f"{self.endpoint}/{index}/_search_ai"
-        body = f'"{query_text}"'
-        response = self.request("GET", url, None, body)
-        return response
-
     def msearch(self, queries: str) -> Dict[str, Any]:
-        """Execute multiple search queries"""
+        """Multi-search across indices"""
         url = f"{self.endpoint}/_msearch"
         response = self.request("POST", url, None, queries)
         return response
 
     def msearch_index(self, index: str, queries: str) -> Dict[str, Any]:
-        """Execute multiple search queries with index-specific parameters"""
+        """Multi-search within a specific index"""
         url = f"{self.endpoint}/{index}/_msearch"
         response = self.request("POST", url, None, queries)
         return response
@@ -678,12 +631,18 @@ class InfinoSDK:
 
     # Alias for sql method to match test expectations
     def sql_query(self, query: str) -> Dict[str, Any]:
-        """Execute SQL query (alias for sql method)"""
+        """Alias for sql()"""
         return self.sql(query)
 
     # Bulk Operations
     def bulk_ingest(self, index: str, payload: str) -> Dict[str, Any]:
-        """Bulk index documents"""
+        """Bulk ingest NDJSON payload
+        
+        Args:
+            index: Index name
+            payload: NDJSON formatted bulk operations, where each line is a valid JSON object
+                    and operations are paired (action + source)
+        """
         url = f"{self.endpoint}/{index}/_bulk"
         # Add newline at end as required by bulk API
         if not payload.endswith('\n'):
@@ -697,7 +656,7 @@ class InfinoSDK:
         return response
 
     def metrics(self, index: str, payload: str) -> Dict[str, Any]:
-        """Ingest metrics in Prometheus format"""
+        """Ingest Prometheus-style metrics payload"""
         url = f"{self.endpoint}/{index}/_metrics"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         response = self.request("POST", url, headers, payload)
@@ -731,19 +690,19 @@ class InfinoSDK:
         return response
 
     def prom_ql_labels(self) -> Dict[str, Any]:
-        """Get metric labels"""
+        """Get PromQL labels"""
         url = f"{self.endpoint}/api/v1/labels"
         response = self.request("GET", url)
         return response
 
     def prom_ql_label_values(self, label: str) -> Dict[str, Any]:
-        """Get label values for a specific label"""
+        """Get label values"""
         url = f"{self.endpoint}/api/v1/label/{label}/values"
         response = self.request("GET", url)
         return response
 
     def prom_ql_series(self, matches: List[str]) -> Dict[str, Any]:
-        """Get time series metadata"""
+        """Get time series for label matchers"""
         url = f"{self.endpoint}/api/v1/series"
         query = "&match[]=".join(matches)
         url = f"{url}?match[]={query}"
@@ -751,21 +710,13 @@ class InfinoSDK:
         return response
 
     def prom_ql_build_info(self) -> Dict[str, Any]:
-        """Get Prometheus build information"""
+        """Get Prometheus build info"""
         url = f"{self.endpoint}/api/v1/status/buildinfo"
         response = self.request("GET", url)
         return response
 
-
-    def nl_query(self, index: str, query: str) -> Dict[str, Any]:
-        """Execute natural language query"""
-        url = f"{self.endpoint}/{index}/_nl_query?q={query}"
-        response = self.request("GET", url)
-        return response
-
-
     def summarize(self, index: str, query: str) -> Dict[str, Any]:
-        """Summarize data with AI"""
+        """Summarize search results"""
         url = f"{self.endpoint}/{index}/_summarize"
         response = self.request("GET", url, None, query)
         return response
@@ -773,7 +724,7 @@ class InfinoSDK:
 
     @classmethod
     def new(cls, access_key: str, secret_key: str, endpoint: str) -> 'InfinoSDK':
-        """Create new SDK instance with credentials"""
+        """Convenience constructor"""
         return cls.new_with_retry(access_key, secret_key, endpoint, RetryConfig())
 
     @classmethod
@@ -784,7 +735,7 @@ class InfinoSDK:
         endpoint: str,
         retry_config: RetryConfig
     ) -> 'InfinoSDK':
-        """Create new SDK instance with custom retry configuration"""
+        """Constructor with custom retry config"""
         return cls(access_key, secret_key, endpoint, retry_config)
 
     # User Account/Auth Operations
@@ -801,7 +752,7 @@ class InfinoSDK:
         return response
 
     def create_user(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new user"""
+        """Create a user"""
         return self.create_security_resource("internaluser", name, config)
 
     def get_user(self, name: str) -> Dict[str, Any]:
@@ -817,25 +768,25 @@ class InfinoSDK:
         return self.delete_security_resource("internaluser", name)
 
     def list_users(self) -> Dict[str, Any]:
-        """List all users"""
+        """List users"""
         url = f"{self.endpoint}/_plugins/_security/api/internalusers"
         response = self.request("GET", url)
         return response
 
     def list_roles(self) -> Dict[str, Any]:
-        """List all roles"""
+        """List roles"""
         url = f"{self.endpoint}/_plugins/_security/api/roles"
         response = self.request("GET", url)
         return response
 
     def list_role_mappings(self) -> Dict[str, Any]:
-        """List all role mappings"""
+        """List role mappings"""
         url = f"{self.endpoint}/_plugins/_security/api/rolesmapping"
         response = self.request("GET", url)
         return response
 
     def list_action_groups(self) -> Dict[str, Any]:
-        """List all action groups"""
+        """List action groups"""
         url = f"{self.endpoint}/_plugins/_security/api/actiongroups"
         response = self.request("GET", url)
         return response
@@ -846,15 +797,8 @@ class InfinoSDK:
         response = self.request("POST", url, None, json.dumps(credentials))
         return response
 
-    # Account Operations
-    def get_account(self, account_id: str) -> Dict[str, Any]:
-        """Get account information"""
-        url = f"{self.endpoint}/_account/{account_id}"
-        response = self.request("GET", url)
-        return response
-
     def get_source(self, index: str, doc_id: str) -> Dict[str, Any]:
-        """Get document source"""
+        """Get document source by id"""
         url = f"{self.endpoint}/{index}/_source/{doc_id}"
         response = self.request("GET", url)
         return response
@@ -866,25 +810,25 @@ class InfinoSDK:
         return response
 
     def mget(self, body: str) -> Dict[str, Any]:
-        """Get multiple documents"""
+        """Multi-get documents"""
         url = f"{self.endpoint}/_mget"
         response = self.request("POST", url, None, body)
         return response
 
     def mget_index(self, index: str, body: str) -> Dict[str, Any]:
-        """Get multiple documents from a specific index"""
+        """Multi-get documents for a specific index"""
         url = f"{self.endpoint}/{index}/_mget"
         response = self.request("POST", url, None, body)
         return response
 
     def count(self, index: str, query: Optional[str] = None) -> Dict[str, Any]:
-        """Count documents matching query"""
+        """Count documents"""
         url = f"{self.endpoint}/{index}/_count"
         response = self.request("GET", url, None, query)
         return response
 
     def document_exists(self, index: str, doc_id: str) -> bool:
-        """Check if document exists"""
+        """Check if a document exists"""
         url = f"{self.endpoint}/{index}/_doc/{doc_id}"
         try:
             self.request("HEAD", url)
@@ -895,7 +839,7 @@ class InfinoSDK:
             raise
 
     def source_exists(self, index: str, doc_id: str) -> bool:
-        """Check if document source exists"""
+        """Check if a document source exists"""
         url = f"{self.endpoint}/{index}/_source/{doc_id}"
         try:
             self.request("HEAD", url)
@@ -906,13 +850,13 @@ class InfinoSDK:
             raise
 
     def index_info(self, index: str) -> Dict[str, Any]:
-        """Get information about indices"""
+        """Get index information"""
         url = f"{self.endpoint}/{index}"
         response = self.request("GET", url)
         return response
 
-    def get_indices(self) -> List[Dict[str, Any]]:
-        """Get indices in cat format"""
+    def cat_indices(self) -> List[Dict[str, Any]]:
+        """List indices via _cat API"""
         url = f"{self.endpoint}/_cat/indices"
         response = self.request("GET", url)
         json_response = response
@@ -927,13 +871,13 @@ class InfinoSDK:
             )
 
     def delete_by_query(self, index: str, query: str) -> Dict[str, Any]:
-        """Delete documents matching query"""
+        """Delete documents by query"""
         url = f"{self.endpoint}/{index}/_delete_by_query"
         response = self.request("DELETE", url, None, query)
         return response
 
     def get_schema(self, index: str) -> Dict[str, Any]:
-        """Get index schema"""
+        """Get schema for an index"""
         url = f"{self.endpoint}/{index}/_schema"
         response = self.request("GET", url)
         return response
@@ -958,15 +902,15 @@ class InfinoSDK:
 
     # Specific Resource Type Operations
     def get_role(self, name: str) -> Dict[str, Any]:
-        """Get role configuration"""
+        """Get a role"""
         return self.get_security_resource("role", name)
 
     def create_role(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new role"""
+        """Create a role"""
         return self.create_security_resource("role", name, config)
 
     def update_role(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update role configuration"""
+        """Update a role"""
         return self.update_security_resource("role", name, config)
 
     def delete_role(self, name: str) -> Dict[str, Any]:
@@ -974,66 +918,66 @@ class InfinoSDK:
         return self.delete_security_resource("role", name)
 
     def get_role_mapping(self, name: str) -> Dict[str, Any]:
-        """Get role mapping"""
+        """Get a role mapping"""
         return self.get_security_resource("rolesmapping", name)
 
     def create_role_mapping(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create role mapping"""
+        """Create a role mapping"""
         return self.create_security_resource("rolesmapping", name, config)
 
     def update_role_mapping(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update role mapping"""
+        """Update a role mapping"""
         return self.update_security_resource("rolesmapping", name, config)
 
     def delete_role_mapping(self, name: str) -> Dict[str, Any]:
-        """Delete role mapping"""
+        """Delete a role mapping"""
         return self.delete_security_resource("rolesmapping", name)
 
     def get_action_group(self, name: str) -> Dict[str, Any]:
-        """Get action group"""
+        """Get an action group"""
         return self.get_security_resource("actiongroup", name)
 
     def create_action_group(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create action group"""
+        """Create an action group"""
         return self.create_security_resource("actiongroup", name, config)
 
     def update_action_group(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update action group"""
+        """Update an action group"""
         return self.update_security_resource("actiongroup", name, config)
 
     def delete_action_group(self, name: str) -> Dict[str, Any]:
-        """Delete action group"""
+        """Delete an action group"""
         return self.delete_security_resource("actiongroup", name)
 
     # Security Config Operations
     def get_security_config(self) -> Dict[str, Any]:
-        """Get security configuration"""
+        """Get security config"""
         url = f"{self.endpoint}/_plugins/_security/api/securityconfig"
         response = self.request("GET", url)
         return response
 
     def update_security_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update security configuration"""
+        """Update security config"""
         url = f"{self.endpoint}/_plugins/_security/api/securityconfig"
         response = self.request("PUT", url, None, json.dumps(config))
         return response
 
     def get_security_health(self) -> Dict[str, Any]:
-        """Get security health status"""
+        """Get security health"""
         url = f"{self.endpoint}/_plugins/_security/health"
         response = self.request("GET", url)
         return response
 
     def get_tenant(self, name: str) -> Dict[str, Any]:
-        """Get tenant information"""
+        """Get a tenant"""
         return self.get_security_resource("tenant", name)
 
     def create_tenant(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new tenant"""
+        """Create a tenant"""
         return self.create_security_resource("tenant", name, config)
 
     def update_tenant(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update tenant configuration"""
+        """Update a tenant"""
         return self.update_security_resource("tenant", name, config)
 
     def delete_tenant(self, name: str) -> Dict[str, Any]:
@@ -1054,7 +998,7 @@ class InfinoSDK:
         url = f"{self.endpoint}/_plugins/_security/api/{resource_type}{plural}/{name}"
         logger.debug(f"Creating security resource: {resource_type} {name} at {url}")
         try:
-            response = self.request("PUT", url, None, json.dumps(config))
+        response = self.request("PUT", url, None, json.dumps(config))
             logger.debug(f"Security resource created successfully: {response}")
             return response
         except Exception as e:
@@ -1090,15 +1034,128 @@ class InfinoSDK:
 
 # Error conversion implementations
 def _convert_reqwest_error(error: requests.RequestException) -> InfinoError:
-    """Convert HTTP request error to InfinoError"""
+    """Convert requests error to InfinoError"""
     return InfinoError(
         error_type=InfinoError.Type.NETWORK,
         message=str(error)
     )
 
 def _convert_json_error(error: json.JSONDecodeError) -> InfinoError:
-    """Convert JSON parsing error to InfinoError"""
+    """Convert JSON error to InfinoError"""
     return InfinoError(
         error_type=InfinoError.Type.PARSE,
         message=str(error)
     )
+
+# Minimal demo tests
+if __name__ == "__main__":
+    import unittest
+    import responses
+
+    class TestInfinoSDK(unittest.TestCase):
+        """Basic tests for InfinoSDK"""
+        
+        def setUp(self):
+            self.client = InfinoSDK(
+                access_key="test_key",
+                secret_key="test_secret",
+                endpoint="http://localhost:8000"
+            )
+
+        @responses.activate
+        def test_request_signing(self):
+            """Test request signing"""
+            responses.add(
+                responses.GET,
+                "http://localhost:8000/test_index/_search",
+                json={"hits": []},
+                status=200,
+                match=[
+                    responses.matchers.header_matcher({
+                        "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
+                        "x-amz-date": lambda x: len(x) == 16,  # YYYYMMDDTHHmmssZ
+                        "x-amz-content-sha256": lambda x: len(x) == 64
+                    })
+                ]
+            )
+
+            query = json.dumps({"query": {"match_all": {}}})
+            response = self.client.search("test_index", query)
+            self.assertEqual(response, {"hits": []})
+
+        @responses.activate
+        def test_document_operations(self):
+            """Test document operations"""
+            doc = json.dumps({"field1": "value1"})
+            
+            responses.add(
+                responses.PUT,
+                "http://localhost:8000/test_index/doc/1",
+                json={"result": "created"},
+                status=200,
+                match=[
+                    responses.matchers.header_matcher({
+                        "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
+                        "x-amz-date": lambda x: len(x) == 16,
+                        "x-amz-content-sha256": lambda x: len(x) == 64
+                    })
+                ]
+            )
+
+            # Note: index_document doesn't exist in Rust SDK, using bulk_ingest instead
+            # This matches what the Rust tests would do
+            pass
+
+        @responses.activate
+        def test_security_operations(self):
+            """Test security API operations"""
+            # Test role operations
+            responses.add(
+                responses.PUT,
+                "http://localhost:8000/_plugins/_security/api/roles/test_role",
+                json={"status": "created"},
+                status=200,
+                match=[
+                    responses.matchers.header_matcher({
+                        "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
+                        "x-amz-date": lambda x: len(x) == 16,
+                        "x-amz-content-sha256": lambda x: len(x) == 64
+                    })
+                ]
+            )
+
+            role_config = {
+                "cluster_permissions": ["*"],
+                "index_permissions": [{
+                    "index_patterns": ["test*"],
+                    "allowed_actions": ["*"]
+                }]
+            }
+
+            response = self.client.create_role("test_role", role_config)
+            self.assertEqual(response, {"status": "created"})
+
+            # Test role mapping operations
+            responses.add(
+                responses.PUT,
+                "http://localhost:8000/_plugins/_security/api/rolesmapping/test_mapping",
+                json={"status": "created"},
+                status=200,
+                match=[
+                    responses.matchers.header_matcher({
+                        "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
+                        "x-amz-date": lambda x: len(x) == 16,
+                        "x-amz-content-sha256": lambda x: len(x) == 64
+                    })
+                ]
+            )
+
+            mapping_config = {
+                "users": ["test_user"],
+                "backend_roles": ["test_role"]
+            }
+
+            response = self.client.create_role_mapping("test_mapping", mapping_config)
+            self.assertEqual(response, {"status": "created"})
+
+    unittest.main() 
