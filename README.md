@@ -5,7 +5,7 @@
 
 Official Python SDK for [Infino](https://infino.ai) with AWS SigV4 authentication.
 
-Infino is a high-performance, cloud-native search and analytics platform that combines the power of a search engine, a data warehouse, an observability engine, and a vector DB in a single tools. It supports Query DSL, SQL, Prom QL, and natural language queries - all with enterprise-grade security and a multi-tenant architecture.
+Infino is a high-performance, cloud-native search and analytics platform that combines the power of a search engine, a data warehouse, an observability engine, and a vector DB in a single tool. It supports Query DSL, SQL, Prom QL, and natural language queries - all with enterprise-grade security and a multi-tenant architecture.
 
 This API is derived from OpenSearch, so most tools that work with OpenSearch should work with Infino.
 
