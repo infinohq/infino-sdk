@@ -3,7 +3,9 @@
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Official Python SDK for [Infino](https://infino.ai), providing seamless access to search, analytics, and AI capabilities with AWS SigV4 authentication.
+Official Python SDK for [Infino](https://infino.ai) with AWS SigV4 authentication.
+
+Infino is a high-performance, cloud-native search and analytics platform that combines the power of a search engine, a data warehouse, an observability engine, and a vector DB. It provides real-time search, complex analytics, vector similarity search, and natural language processing - all with enterprise-grade security and multi-tenant architecture.
 
 This API is derived from OpenSearch, so most tools that work with OpenSearch should work with Infino.
 
@@ -443,8 +445,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution gu
 
 ```bash
 # Clone repository
-git clone https://github.com/infinohq/infino-sdk-python.git
-cd infino-sdk-python
+git clone https://github.com/infinohq/infino-sdk.git
+cd infino-sdk
 
 # Install development dependencies
 pip install -r requirements-dev.txt
