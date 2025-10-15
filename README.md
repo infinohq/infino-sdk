@@ -13,8 +13,6 @@ Official Python SDK for [Infino](https://infino.ai) - the universal access layer
 - **Explore**: FinoDB for staging, correlation, and agent memories
 - **Govern**: Fine-grained RBAC for humans and AI agents
 
-Compatible with OpenSearch/Elasticsearch APIs.
-
 ## Installation
 
 ### From Source (Recommended until published to PyPI)
