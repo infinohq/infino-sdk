@@ -82,21 +82,46 @@ print(f"Found {len(results.get('hits', {}).get('hits', []))} documents")
 
 ## Access – Connect to Data
 
-Query external sources in place—no data movement required.
+Create connections to external sources and query them in place—no data movement required.
+
+### Create Connections
 
 ```python
 from infino_sdk import InfinoSDK
 
 sdk = InfinoSDK(access_key, secret_key, endpoint)
 
-# Query external Elasticsearch cluster (via connection_id)
+# Create connection to Elasticsearch
+connection_config = {
+    "connector_id": "elasticsearch",
+    "name": "Production ES Cluster",
+    "config": {
+        "host": "https://es-cluster.example.com:9200",
+        "username": "elastic",
+        "password": "secret"
+    }
+}
+connection = await sdk.create_connection(connection_config)
+print(f"Created connection: {connection['connection_id']}")
+
+# List all connections
+connections = await sdk.list_connections()
+
+# Test connection
+status = await sdk.test_connection("conn_abc123")
+```
+
+### Query Connected Sources
+
+```python
+# Query external Elasticsearch (via connection_id)
 results = sdk.search(
     "external_logs", 
     '{"query": {"match_all": {}}}',
     connection_id="conn_elasticsearch_prod"
 )
 
-# Query external Snowflake table (via connection_id)
+# Query external Snowflake (via connection_id)
 results = sdk.sql(
     "SELECT * FROM sales_data WHERE region='US' LIMIT 10",
     connection_id="conn_snowflake_warehouse"
