@@ -3,11 +3,17 @@
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Official Python SDK for [Infino](https://infino.ai) with AWS SigV4 authentication.
+Official Python SDK for [Infino](https://infino.ai) - the universal access layer for agents and humans.
 
-Infino is a high-performance, cloud-native search and analytics platform that combines the power of a search engine, a data warehouse, an observability engine, and a vector DB in a single tool. It supports Query DSL, SQL, Prom QL, and natural language queries - all with enterprise-grade security and a multi-tenant architecture.
+**Infino** provides a single gateway to your entire data stack. Query Elasticsearch, OpenSearch, Snowflake, and 50+ sources in place—no ETL required. Use natural language, SQL, or Query DSL through one unified API.
 
-This API is derived from OpenSearch, so most tools that work with OpenSearch should work with Infino.
+**Built for**:
+- **Access**: Connect to external sources without data movement
+- **Query**: Natural language, SQL, and Query DSL across all sources
+- **Explore**: FinoDB for staging, correlation, and agent memories
+- **Govern**: Fine-grained RBAC for humans and AI agents
+
+Compatible with OpenSearch/Elasticsearch APIs.
 
 ## Installation
 
@@ -66,70 +72,91 @@ print(f"Found {len(results.get('hits', {}).get('hits', []))} documents")
 
 ### Table of Contents
 
-- [Basic Usage](#basic-usage)
-- [Search & Query](#search--query)
-- [Bulk Operations](#bulk-operations)
-- [Permissions Management](#security-management)
-- [WebSocket Connections](#websocket-connections)
+- [Quick Start](#quick-start)
+- [Access – Connect to Data](#access--connect-to-data)
+- [Query – Ask Questions](#query--ask-questions)
+- [Explore – FinoDB Operations](#explore--finodb-operations)
+- [Govern – Security & Access Control](#govern--security--access-control)
 - [Error Handling](#error-handling)
 - [Advanced Configuration](#advanced-configuration)
 
-### Basic Usage
+## Access – Connect to Data
 
-#### Creating an SDK Instance
+Query external sources in place—no data movement required.
 
 ```python
 from infino_sdk import InfinoSDK
 
-# Create instance and call synchronously
-sdk = InfinoSDK(access_key, secret_key, endpoint)
-sdk.ping()
-```
-
-#### Index Management
-
-```python
 sdk = InfinoSDK(access_key, secret_key, endpoint)
 
-# Create index
-sdk.create_index("products")
+# Query external Elasticsearch cluster (via connection_id)
+results = sdk.search(
+    "external_logs", 
+    '{"query": {"match_all": {}}}',
+    connection_id="conn_elasticsearch_prod"
+)
 
-# Create index with custom mapping
-mapping = {
-    "mappings": {
-        "properties": {
-            "title": {"type": "text"},
-            "price": {"type": "float"},
-            "created_at": {"type": "date"}
-        }
-    }
-}
-sdk.create_index_with_mapping("products_v2", mapping)
-
-# Get index info
-info = sdk.get_index("products")
-
-# List all indices
-indices = sdk.get_cat_indices()
-
-# Delete index
-sdk.delete_index("old_products")
+# Query external Snowflake table (via connection_id)
+results = sdk.sql(
+    "SELECT * FROM sales_data WHERE region='US' LIMIT 10",
+    connection_id="conn_snowflake_warehouse"
+)
 ```
 
-### Search & Query
+**No ETL**: Data stays in your external sources. Infino queries it where it lives.
 
-#### OpenSearch Query DSL
+## Query – Ask Questions
+
+Query any connected source or FinoDB with multiple interfaces.
+
+### Natural Language (Fino AI)
 
 ```python
-# Match all query
+async with InfinoSDK(access_key, secret_key, endpoint) as sdk:
+    # Connect to WebSocket for conversational queries
+    ws = await sdk.websocket_connect("/_conversation/ws")
+
+    try:
+        # Ask natural language question
+        await ws.send(json.dumps({
+            "type": "query",
+            "content": "What are the top 5 products by revenue?"
+        }))
+
+        # Receive AI response
+        async for message in ws:
+            data = json.loads(message)
+            print(f"Response: {data}")
+            if data.get("type") == "complete":
+                break
+    finally:
+        await ws.close()
+```
+
+### SQL Queries
+
+```python
+# Query any source (external or FinoDB) with SQL
+results = sdk.sql("SELECT * FROM products WHERE price > 100 LIMIT 10")
+
+# With aggregations
+results = sdk.sql("SELECT category, AVG(price) FROM products GROUP BY category")
+
+# Query external source via connection_id
+results = sdk.sql(
+    "SELECT * FROM logs WHERE level='ERROR'",
+    connection_id="conn_elasticsearch"
+)
+```
+
+### Query DSL
+
+```python
+# Simple query
 query = '{"query": {"match_all": {}}}'
 results = sdk.search("products", query)
 
-# Term query
-query = '{"query": {"term": {"category": "electronics"}}}'
-results = sdk.search("products", query)
-
-# Complex query with aggregations
+# Complex query with filters
 query = '''
 {
   "query": {
@@ -137,89 +164,20 @@ query = '''
       "must": [{"range": {"price": {"gte": 10, "lte": 100}}}],
       "filter": [{"term": {"in_stock": true}}]
     }
-  },
-  "aggs": {
-    "price_ranges": {
-      "range": {
-        "field": "price",
-        "ranges": [
-          {"to": 25},
-          {"from": 25, "to": 50},
-          {"from": 50}
-        ]
-      }
-    }
   }
 }
 '''
 results = sdk.search("products", query)
+
+# Query external source
+results = sdk.search(
+    "external_index",
+    query,
+    connection_id="conn_opensearch"
+)
 ```
 
-#### AI-Powered Search
-
-```python
-# Natural language search
-results = sdk.search_ai("products", "find me affordable smartphones under $500")
-```
-
-#### SQL Queries
-
-```python
-# Execute SQL query
-results = sdk.sql("SELECT * FROM products WHERE price > 100 ORDER BY created_at DESC LIMIT 10")
-
-# With aggregations
-results = sdk.sql("SELECT category, AVG(price) as avg_price FROM products GROUP BY category")
-```
-
-#### Document Operations
-
-```python
-# Get document by ID
-doc = sdk.get_document("products", "product_123")
-
-# Get document source only
-source = sdk.get_source("products", "product_123")
-
-# Check if document exists
-exists = sdk.document_exists("products", "product_123")
-
-# Count documents
-count = sdk.count("products", '{"query": {"term": {"category": "electronics"}}}')
-
-# Delete by query
-result = sdk.delete_by_query("products", '{"query": {"range": {"created_at": {"lt": "2023-01-01"}}}}')
-```
-
-### Bulk Operations
-
-#### Bulk Indexing
-
-```python
-# NDJSON format - each document is 2 lines: action + source
-bulk_data = '''
-{"index": {"_id": "1"}}
-{"title": "Product 1", "price": 29.99, "category": "electronics"}
-{"index": {"_id": "2"}}
-{"title": "Product 2", "price": 49.99, "category": "home"}
-{"update": {"_id": "3"}}
-{"doc": {"price": 39.99}}
-{"delete": {"_id": "4"}}
-'''
-
-result = sdk.bulk_ingest("products", bulk_data)
-print(f"Indexed {result.get('items', [])} documents")
-```
-
-#### Metrics Ingestion
-
-```python
-# Prometheus-style metrics
-metrics_data = 'http_requests_total{method="GET",status="200"} 1234 1609459200000'
-sdk.metrics("metrics_index", metrics_data)
-```
-
-#### PromQL Queries
+### PromQL (Time-Series)
 
 ```python
 # Instant query
@@ -232,128 +190,141 @@ result = sdk.prom_ql_query_range(
     end=1609545600,
     step=300
 )
-
-# Get labels
-labels = sdk.prom_ql_labels()
-
-# Get label values
-values = sdk.prom_ql_label_values("method")
 ```
 
-### Security Management
+## Explore – FinoDB Operations
 
-#### User Management
+Use FinoDB for staging, correlation, and agent memories.
+
+### When to Use FinoDB
+
+- **Staging**: Test data transformations before production
+- **Correlation**: Join data from multiple external sources
+- **Agent Memories**: Store enriched context and agent state
+- **Prototyping**: Quick experimentation with sample data
+
+### Create Indices
 
 ```python
-# Create user
-user_config = {
-    "password": "SecureP@ssw0rd123",
-    "backend_roles": ["admin"],
-    "attributes": {
-        "department": "engineering"
+# Create FinoDB index for agent memories
+sdk.create_index("agent-memories-2024")
+
+# With custom mapping
+mapping = {
+    "mappings": {
+        "properties": {
+            "query": {"type": "text"},
+            "enrichment": {"type": "object"},
+            "@timestamp": {"type": "date"}
+        }
     }
 }
-await sdk.create_user("john_doe", user_config)
-
-# Get user
-user = await sdk.get_user("john_doe")
-
-# Update user
-await sdk.update_user("john_doe", {"password": "NewP@ssw0rd456"})
-
-# List all users
-users = await sdk.list_users()
-
-# Delete user
-await sdk.delete_user("john_doe")
-
-# Rotate API keys
-new_keys = await sdk.rotate_api_keys("john_doe")
-print(f"New access key: {new_keys['access_key']}")
-print(f"New secret key: {new_keys['secret_key']}")
+sdk.create_index_with_mapping("agent-context", mapping)
 ```
 
-#### Role Management
+### Ingest Data
 
 ```python
-# Create role
+# Bulk ingest to FinoDB
+bulk_data = '''
+{"index": {"_id": "1"}}
+{"query": "sales analysis", "enrichment": {...}, "@timestamp": "2024-10-15"}
+{"index": {"_id": "2"}}
+{"query": "customer churn", "enrichment": {...}, "@timestamp": "2024-10-15"}
+'''
+
+sdk.bulk_ingest("agent-memories-2024", bulk_data)
+```
+
+### Manage Indices
+
+```python
+# Get index info
+info = sdk.get_index("agent-memories-2024")
+
+# List all FinoDB indices
+indices = sdk.get_cat_indices()
+
+# Delete index
+sdk.delete_index("old-staging-data")
+```
+
+### Document Operations
+
+```python
+# Get document
+doc = sdk.get_document("agent-memories-2024", "memory_123")
+
+# Count documents
+count = sdk.count("agent-memories-2024", '{"query": {"match_all": {}}}')
+
+# Delete by query
+sdk.delete_by_query("agent-memories-2024", '{"query": {"range": {"@timestamp": {"lt": "2024-01-01"}}}}')
+```
+
+## Govern – Security & Access Control
+
+Control access for AI agents and human users with fine-grained RBAC.
+
+### User Management
+
+```python
+# Create user (human or AI agent)
+user_config = {
+    "password": "SecureP@ssw0rd123",
+    "backend_roles": ["analyst"],
+    "attributes": {
+        "department": "engineering",
+        "user_type": "ai_agent"  # or "human"
+    }
+}
+await sdk.create_user("analytics-agent", user_config)
+
+# List users
+users = await sdk.list_users()
+
+# Update user
+await sdk.update_user("analytics-agent", {"password": "NewP@ssw0rd456"})
+
+# Delete user
+await sdk.delete_user("analytics-agent")
+
+# Rotate API keys
+new_keys = await sdk.rotate_api_keys("analytics-agent")
+```
+
+### Role Management
+
+```python
+# Create role with permissions
 role_config = {
-    "cluster_permissions": ["cluster:admin/*"],
+    "cluster_permissions": ["cluster:monitor/*"],
     "index_permissions": [
         {
-            "index_patterns": ["products*"],
-            "allowed_actions": ["read", "write", "indices:admin/create"]
-        },
-        {
-            "index_patterns": ["logs*"],
+            "index_patterns": ["logs-*", "metrics-*"],
             "allowed_actions": ["read"]
+        }
+    ],
+    "tenant_permissions": [
+        {
+            "tenant_patterns": ["engineering"],
+            "allowed_actions": ["kibana_all_write"]
         }
     ]
 }
-await sdk.create_role("product_manager", role_config)
+await sdk.create_role("readonly-analyst", role_config)
 
-# Get role
-role = await sdk.get_role("product_manager")
-
-# Update role
-await sdk.update_role("product_manager", {"cluster_permissions": ["cluster:monitor/*"]})
-
-# List roles
-roles = await sdk.list_roles()
-
-# Delete role
-await sdk.delete_role("product_manager")
-```
-
-#### Role Mapping
-
-```python
-# Map users to roles
+# Assign role to users or tenants
 mapping_config = {
-    "users": ["john_doe", "jane_smith"],
-    "backend_roles": ["developer"],
-    "hosts": ["*.company.com"]
+    "users": ["analytics-agent", "human-analyst"],
+    "backend_roles": ["readonly-analyst"]
 }
-await sdk.create_role_mapping("dev_team_mapping", mapping_config)
-
-# Get mapping
-mapping = await sdk.get_role_mapping("dev_team_mapping")
-
-# Update mapping
-await sdk.update_role_mapping("dev_team_mapping", {"users": ["john_doe"]})
-
-# List mappings
-mappings = await sdk.list_role_mappings()
-
-# Delete mapping
-await sdk.delete_role_mapping("dev_team_mapping")
+await sdk.create_role_mapping("analyst-mapping", mapping_config)
 ```
 
-### Natural Language
+**Unified Governance**: Same RBAC system for humans and AI agents.
 
-```python
-async with InfinoSDK(access_key, secret_key, endpoint) as sdk:
-    # Connect to WebSocket endpoint (auth handled automatically)
-    ws = await sdk.websocket_connect("/_conversation/ws")
-
-    try:
-        # Send a message
-        await ws.send(json.dumps({
-            "type": "query",
-            "content": "What are my top products?"
-        }))
-
-        # Receive response
-        async for message in ws:
-            data = json.loads(message)
-            print(f"Received: {data}")
-            if data.get("type") == "complete":
-                break
-    finally:
-        await ws.close()
-```
-
-### Error Handling
+## Error Handling
 
 ```python
 from infino_sdk import InfinoSDK, InfinoError
@@ -362,37 +333,27 @@ async with InfinoSDK(access_key, secret_key, endpoint) as sdk:
     try:
         doc = await sdk.get_document("products", "missing_id")
     except InfinoError as e:
-        # Check error type
         if e.error_type == InfinoError.Type.REQUEST:
             if e.status_code() == 404:
                 print("Document not found")
             elif e.status_code() == 403:
-                print("Access denied")
+                print("Access denied - check user permissions")
             elif e.status_code() == 401:
                 print("Authentication failed")
-            else:
-                print(f"Request error: {e.message}")
         elif e.error_type == InfinoError.Type.NETWORK:
             print(f"Network error: {e.message}")
-        elif e.error_type == InfinoError.Type.TIMEOUT:
-            print("Request timed out")
-        elif e.error_type == InfinoError.Type.RATE_LIMIT:
-            print("Rate limit exceeded")
 ```
 
-### Advanced Configuration
+## Advanced Configuration
 
-#### Custom Retry Configuration
+### Custom Retry Configuration
 
 ```python
 from infino_sdk import InfinoSDK, RetryConfig
 
-# Configure custom retry behavior
 retry_config = RetryConfig()
-retry_config.initial_interval = 500  # Start with 500ms delay
-retry_config.max_interval = 30000    # Max 30 seconds between retries
-retry_config.max_elapsed_time = 180000  # Give up after 3 minutes
-retry_config.max_retries = 5         # Try up to 5 times
+retry_config.initial_interval = 500
+retry_config.max_retries = 5
 
 sdk = InfinoSDK(
     access_key=access_key,
@@ -402,35 +363,44 @@ sdk = InfinoSDK(
 )
 ```
 
-#### Logging
+### Logging
 
 ```python
 import logging
 
-# Enable SDK logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("infino_sdk")
 logger.setLevel(logging.DEBUG)
 
-# SDK will log all requests and responses
-async with InfinoSDK(access_key, secret_key, endpoint) as sdk:
-    await sdk.ping()  # Logs will show request details
+# SDK logs all requests
+sdk = InfinoSDK(access_key, secret_key, endpoint)
+sdk.ping()
 ```
 
 ## Examples
 
-See the [examples/](examples/) directory for complete working examples:
+Complete working examples organized by workflow:
 
-- [**basic_search.py**](examples/basic_search.py) - Simple search operations
-- [**bulk_indexing.py**](examples/bulk_indexing.py) - Bulk data ingestion
-- [**user_management.py**](examples/user_management.py) - Security and access control
-- [**websocket_chat.py**](examples/websocket_chat.py) - Real-time WebSocket communication
-- [**sql_analytics.py**](examples/sql_analytics.py) - SQL query examples
+### Access Examples
+- [**basic_search.py**](examples/basic_search.py) - Query external sources with Query DSL
+
+### Query Examples
+- [**sql_analytics.py**](examples/sql_analytics.py) - SQL queries across sources
+- [**websocket_chat.py**](examples/websocket_chat.py) - Natural language with Fino AI
+- [**promql_metrics.py**](examples/promql_metrics.py) - PromQL time-series queries
+
+### Explore Examples
+- [**bulk_indexing.py**](examples/bulk_indexing.py) - Ingest data to FinoDB
+
+### Govern Examples
+- [**user_management.py**](examples/user_management.py) - Manage users and roles for agents/humans
+
+### Utilities
 - [**error_handling.py**](examples/error_handling.py) - Robust error handling patterns
 
 ## API Reference
 
-Full API documentation is available in the [API Reference](docs/api-reference.md).
+Full method documentation available in code docstrings and [docs.infino.ai](https://docs.infino.ai).
 
 ## Requirements
 
