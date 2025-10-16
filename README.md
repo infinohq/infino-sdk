@@ -3,15 +3,15 @@
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Official Python SDK for [Infino](https://infino.ai) - the universal access layer for agents and humans.
+Official Python SDK for [Infino](https://infino.ai) - the data unification layer for agents and humans.
 
-**Infino** provides a single gateway to your entire data stack. Query Elasticsearch, OpenSearch, Snowflake, and 50+ sources in place—no ETL required. Use natural language, SQL, or Query DSL through one unified API.
+**Infino** provides a single gateway to your entire data stack. Query Elasticsearch, OpenSearch, Snowflake, and 50+ sources in place—no ETL required. Use natural language, SQL, Query DSL, or PromQL through one unified API.
 
 **Built for**:
-- **Access**: Connect to external sources without data movement
-- **Query**: Natural language, SQL, and Query DSL across all sources
-- **Explore**: FinoDB for staging, correlation, and agent memories
-- **Govern**: Fine-grained RBAC for humans and AI agents
+- **Connect**: Access 50+ data sources without data movement
+- **Query**: Natural language, SQL, Query DSL, and PromQL across all sources  
+- **Analyze**: Pull together data from different sources for cross-source correlation
+- **Govern**: Fine-grained RBAC for your entire data stack
 
 ## Installation
 
@@ -71,16 +71,16 @@ print(f"Found {len(results.get('hits', {}).get('hits', []))} documents")
 ### Table of Contents
 
 - [Quick Start](#quick-start)
-- [Access – Connect to Data](#access--connect-to-data)
+- [Connect – Access Data Sources](#connect--access-data-sources)
 - [Query – Ask Questions](#query--ask-questions)
-- [Explore – FinoDB Operations](#explore--finodb-operations)
+- [Analyze – Cross-Source Operations](#analyze--cross-source-operations)
 - [Govern – Security & Access Control](#govern--security--access-control)
 - [Error Handling](#error-handling)
 - [Advanced Configuration](#advanced-configuration)
 
-## Access – Connect to Data
+## Connect – Access Data Sources
 
-Create connections to external sources and query them in place—no data movement required.
+Connect to external sources and query them in place—no ETL, no data movement required.
 
 ### Create Connections
 
@@ -215,79 +215,79 @@ result = sdk.prom_ql_query_range(
 )
 ```
 
-## Explore – FinoDB Operations
+## Analyze – Cross-Source Operations
 
-Use FinoDB for staging, correlation, and agent memories.
+Use FinoDB to pull together data from different sources for correlation and analysis.
 
 ### When to Use FinoDB
 
-- **Staging**: Test data transformations before production
-- **Correlation**: Join data from multiple external sources
-- **Agent Memories**: Store enriched context and agent state
-- **Prototyping**: Quick experimentation with sample data
+- **Cross-Source Joins**: Correlate data from multiple external sources
+- **Unified Analysis**: Ask deeper questions across silos
+- **Staging**: Test queries before running in production
+- **Temporary Storage**: Hold intermediate results for complex workflows
 
 ### Create Indices
 
 ```python
-# Create FinoDB index for agent memories
-sdk.create_index("agent-memories-2024")
+# Create FinoDB index for staging
+sdk.create_index("staging-analysis-2024")
 
 # With custom mapping
 mapping = {
     "mappings": {
         "properties": {
-            "query": {"type": "text"},
-            "enrichment": {"type": "object"},
+            "product_id": {"type": "keyword"},
+            "revenue": {"type": "float"},
             "@timestamp": {"type": "date"}
         }
     }
 }
-sdk.create_index_with_mapping("agent-context", mapping)
+sdk.create_index_with_mapping("sales-correlation", mapping)
 ```
 
 ### Ingest Data
 
 ```python
-# Bulk ingest to FinoDB
+# Bulk ingest to FinoDB for correlation
 bulk_data = '''
 {"index": {"_id": "1"}}
-{"query": "sales analysis", "enrichment": {...}, "@timestamp": "2024-10-15"}
+{"product_id": "A123", "revenue": 15000, "@timestamp": "2024-10-15"}
 {"index": {"_id": "2"}}
-{"query": "customer churn", "enrichment": {...}, "@timestamp": "2024-10-15"}
+{"product_id": "B456", "revenue": 23000, "@timestamp": "2024-10-15"}
 '''
 
-sdk.bulk_ingest("agent-memories-2024", bulk_data)
+sdk.bulk_ingest("sales-correlation", bulk_data)
 ```
 
 ### Manage Indices
 
 ```python
 # Get index info
-info = sdk.get_index("agent-memories-2024")
+info = sdk.get_index("sales-correlation")
 
 # List all FinoDB indices
 indices = sdk.get_cat_indices()
 
 # Delete index
-sdk.delete_index("old-staging-data")
+sdk.delete_index("old-staging-2023")
 ```
 
 ### Document Operations
 
 ```python
 # Get document
-doc = sdk.get_document("agent-memories-2024", "memory_123")
+doc = sdk.get_document("sales-correlation", "prod_123")
 
 # Count documents
-count = sdk.count("agent-memories-2024", '{"query": {"match_all": {}}}')
+count = sdk.count("sales-correlation", '{"query": {"match_all": {}}}')
 
 # Delete by query
-sdk.delete_by_query("agent-memories-2024", '{"query": {"range": {"@timestamp": {"lt": "2024-01-01"}}}}')
+sdk.delete_by_query("sales-correlation", '{"query": {"range": {"@timestamp": {"lt": "2024-01-01"}}}}')
 ```
 
 ## Govern – Security & Access Control
 
-Control access for AI agents and human users with fine-grained RBAC.
+Control access to your entire data stack with centralized governance for both humans and agents.
 
 ### User Management
 
@@ -345,7 +345,7 @@ mapping_config = {
 await sdk.create_role_mapping("analyst-mapping", mapping_config)
 ```
 
-**Unified Governance**: Same RBAC system for humans and AI agents.
+**Centralized Governance**: Apply consistent policies across all connected sources for both humans and agents.
 
 ## Error Handling
 
@@ -404,7 +404,7 @@ sdk.ping()
 
 Complete working examples organized by workflow:
 
-### Access Examples
+### Connect Examples
 - [**basic_search.py**](examples/basic_search.py) - Query external sources with Query DSL
 
 ### Query Examples
@@ -412,11 +412,11 @@ Complete working examples organized by workflow:
 - [**websocket_chat.py**](examples/websocket_chat.py) - Natural language with Fino AI
 - [**promql_metrics.py**](examples/promql_metrics.py) - PromQL time-series queries
 
-### Explore Examples
-- [**bulk_indexing.py**](examples/bulk_indexing.py) - Ingest data to FinoDB
+### Analyze Examples
+- [**bulk_indexing.py**](examples/bulk_indexing.py) - Pull data together for cross-source analysis
 
 ### Govern Examples
-- [**user_management.py**](examples/user_management.py) - Manage users and roles for agents/humans
+- [**user_management.py**](examples/user_management.py) - Centralized access control
 
 ### Utilities
 - [**error_handling.py**](examples/error_handling.py) - Robust error handling patterns
