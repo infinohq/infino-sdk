@@ -3,7 +3,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Official Python SDK for [Infino](https://infino.ai) - the data unification layer for agents and humans.
+Official Python SDK for [Infino](https://infino.ai) - the unification layer for your data stack.
 
 **Infino** provides a single gateway to your entire data stack. Query Elasticsearch, OpenSearch, Snowflake, and 50+ sources in place—no ETL required. Use natural language, SQL, Query DSL, or PromQL through one unified API.
 
@@ -14,25 +14,6 @@ Official Python SDK for [Infino](https://infino.ai) - the data unification layer
 - **Govern**: Fine-grained RBAC for your entire data stack
 
 ## Installation
-
-### From Source (Recommended until published to PyPI)
-
-```bash
-# Clone the repository
-git clone https://github.com/infinohq/infino-sdk.git
-cd infino-sdk
-
-# Install the package
-pip install -e .
-```
-
-### From GitHub (Direct)
-
-```bash
-pip install git+https://github.com/infinohq/infino-sdk.git
-```
-
-### From PyPI (Coming Soon)
 
 ```bash
 pip install infino-sdk
