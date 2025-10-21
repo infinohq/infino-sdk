@@ -61,7 +61,7 @@ print(f"Found {len(results.get('hits', {}).get('hits', []))} documents")
 
 ## Connect – Access Data Sources
 
-Connect to external sources and query them in place—no ETL, no data movement required.
+Connect to external sources and query them in place.
 
 ### Create Connections
 
@@ -106,8 +106,6 @@ results = sdk.sql(
     connection_id="conn_snowflake_warehouse"
 )
 ```
-
-**No ETL**: Data stays in your external sources. Infino queries it where it lives.
 
 ## Query – Ask Questions
 
@@ -210,20 +208,8 @@ Use FinoDB to pull together data from different sources for correlation and anal
 ### Create Indices
 
 ```python
-# Create FinoDB index for staging
+# Create FinoDB index for deeper analysis
 sdk.create_index("staging-analysis-2024")
-
-# With custom mapping
-mapping = {
-    "mappings": {
-        "properties": {
-            "product_id": {"type": "keyword"},
-            "revenue": {"type": "float"},
-            "@timestamp": {"type": "date"}
-        }
-    }
-}
-sdk.create_index_with_mapping("sales-correlation", mapping)
 ```
 
 ### Ingest Data
