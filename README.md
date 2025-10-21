@@ -143,7 +143,7 @@ results = sdk.sql("SELECT category, AVG(price) FROM products GROUP BY category")
 # Query external source via connection_id
 results = sdk.sql(
     "SELECT * FROM logs WHERE level='ERROR'",
-    connection_id="conn_elasticsearch"
+    connection_id="conn_snowflake_warehouse"
 )
 ```
 
