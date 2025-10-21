@@ -34,10 +34,6 @@ sdk = InfinoSDK(
 # Check connection
 info = sdk.ping()
 print(f"Connected: {info}")
-
-# Execute a search
-results = sdk.search("my_index", '{"query": {"match_all": {}}}')
-print(f"Found {len(results.get('hits', {}).get('hits', []))} documents")
 ```
 
 ## Getting Your Credentials
