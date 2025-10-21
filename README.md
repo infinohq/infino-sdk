@@ -5,7 +5,7 @@
 
 Official Python SDK for [Infino](https://infino.ai) - the unification layer for your data stack.
 
-**Infino** provides a single gateway to your entire data stack. Query Elasticsearch, OpenSearch, Snowflake, and 50+ sources in place—no ETL required. Use natural language, SQL, Query DSL, or PromQL through one unified API.
+**Infino** provides a single gateway to your data stack. Query Elasticsearch, OpenSearch, Snowflake, and 50+ sources in natural language, SQL, QueryDSL, or PromQL. Bring diverse data sources together for deeper analysis—no ETL required. All through one unified API. 
 
 **Built for**:
 - **Connect**: Access 50+ data sources without data movement
@@ -270,61 +270,104 @@ sdk.delete_by_query("sales-correlation", '{"query": {"range": {"@timestamp": {"l
 
 Control access to your entire data stack with centralized governance for both humans and agents.
 
+### Complete Workflow Example
+
+```python
+from infino_sdk import InfinoSDK
+
+sdk = InfinoSDK(access_key, secret_key, endpoint)
+
+# Step 1: Create a role with specific permissions
+role_config = """
+Version: 2025-01-01
+Permissions:
+  - ResourceType: record
+    Actions: [read]
+    Resources: ["logs-*", "metrics-*"]
+  
+  - ResourceType: metadata
+    Actions: [read]
+    Resources: ["*"]
+"""
+
+await sdk.create_role("readonly-analyst", role_config)
+
+# Step 2: Create user and assign the role
+user_config = """
+Version: 2025-01-01
+Password: SecureP@ssw0rd123!
+Roles:
+  - readonly-analyst
+"""
+
+await sdk.create_user("analytics-agent", user_config)
+
+# Step 3: Rotate API keys when needed
+new_keys = await sdk.rotate_api_keys("analytics-agent")
+print(f"New access key: {new_keys['access_key']}")
+```
+
 ### User Management
 
 ```python
-# Create user (human or AI agent)
-user_config = {
-    "password": "SecureP@ssw0rd123",
-    "backend_roles": ["analyst"],
-    "attributes": {
-        "department": "engineering",
-        "user_type": "ai_agent"  # or "human"
-    }
-}
-await sdk.create_user("analytics-agent", user_config)
-
-# List users
+# List all users
 users = await sdk.list_users()
 
-# Update user
-await sdk.update_user("analytics-agent", {"password": "NewP@ssw0rd456"})
+# Get specific user
+user = await sdk.get_user("analytics-agent")
+
+# Update user password or roles
+updated_config = """
+Version: 2025-01-01
+Password: NewP@ssw0rd456!
+Roles:
+  - readonly-analyst
+  - data-viewer
+"""
+await sdk.update_user("analytics-agent", updated_config)
 
 # Delete user
 await sdk.delete_user("analytics-agent")
-
-# Rotate API keys
-new_keys = await sdk.rotate_api_keys("analytics-agent")
 ```
 
 ### Role Management
 
 ```python
-# Create role with permissions
-role_config = {
-    "cluster_permissions": ["cluster:monitor/*"],
-    "index_permissions": [
-        {
-            "index_patterns": ["logs-*", "metrics-*"],
-            "allowed_actions": ["read"]
-        }
-    ],
-    "tenant_permissions": [
-        {
-            "tenant_patterns": ["engineering"],
-            "allowed_actions": ["kibana_all_write"]
-        }
-    ]
-}
-await sdk.create_role("readonly-analyst", role_config)
+# Create role with field-level security
+role_with_masking = """
+Version: 2025-01-01
+Permissions:
+  - ResourceType: record
+    Actions: [read]
+    Resources: ["users-*"]
+    Fields:
+      Allow: ["id", "name", "email"]
+      Mask:
+        email: redact
+        ssn: remove
+      Deny:
+        - password
+        - api_key
+"""
+await sdk.create_role("privacy-compliant-analyst", role_with_masking)
 
-# Assign role to users or tenants
-mapping_config = {
-    "users": ["analytics-agent", "human-analyst"],
-    "backend_roles": ["readonly-analyst"]
-}
-await sdk.create_role_mapping("analyst-mapping", mapping_config)
+# Get role details
+role = await sdk.get_role("readonly-analyst")
+
+# Delete role
+await sdk.delete_role("old-role")
 ```
+
+### Resource Types & Actions
+
+Permissions use universal terminology that works across SQL, NoSQL, logs, and metrics:
+
+| ResourceType | Actions | What It Controls |
+|--------------|---------|------------------|
+| `metadata` | `read` | View schemas, mappings, list collections |
+| `collection` | `create`, `delete` | Create/delete tables/indices |
+| `record` | `read`, `write` | Query/insert/update/delete data |
+| `field` | N/A | Controlled via `Fields` in record permissions |
 
 **Centralized Governance**: Apply consistent policies across all connected sources for both humans and agents.
 
