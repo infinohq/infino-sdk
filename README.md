@@ -10,7 +10,7 @@ Official Python SDK for [Infino](https://infino.ai) - the unification layer for 
 **Built for**:
 - **Connect**: Access 50+ data sources without data movement
 - **Query**: Natural language, SQL, Query DSL, and PromQL across all sources  
-- **Analyze**: Pull together data from different sources for cross-source correlation
+- **Correlate**: Pull together data from different sources for cross-source correlation
 - **Govern**: Fine-grained RBAC for your entire data stack
 
 ## Installation
@@ -196,9 +196,9 @@ result = sdk.prom_ql_query_range(
 )
 ```
 
-## Analyze – Cross-Source Operations
+## Correlate – Cross-Source Operations
 
-Use FinoDB to pull together data from different sources for correlation and analysis.
+Use FinoDB to pull together data from different sources for correlation and analysis without schemas.
 
 ### When to Use FinoDB
 
