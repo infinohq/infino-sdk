@@ -99,7 +99,7 @@ def test_get_cat_indices(sdk_with_mock_session, mock_response):
     response = mock_response(200, indices_response)
     sdk.session.request.return_value = response
     
-    result = sdk.get_cat_indices()
+    result = sdk.cat_indices()
     
     assert isinstance(result, list)
     assert len(result) == 2

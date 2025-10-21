@@ -40,13 +40,15 @@ def retry_config():
 @pytest.fixture
 def mock_response():
     """Create a mock HTTP response"""
+    import json as json_lib
     def _mock_response(status=200, json_data=None, text=""):
         response = Mock()
         response.status_code = status
-        response.text = text
         
         if json_data:
-            response.json.return_value = json_data
+            response.text = json_lib.dumps(json_data)
+        else:
+            response.text = text
         
         return response
     
@@ -61,11 +63,54 @@ def mock_requests():
 
 
 @pytest.fixture
-def mock_sdk():
-    """Create a mock SDK instance for testing"""
+def sdk_with_mock_session():
+    """Create SDK with mocked session for testing"""
     with patch('infino_sdk.lib.requests') as mock_requests:
-        sdk = InfinoSDK("test_access", "test_secret", "https://test.infino.ws")
-        sdk._session = MagicMock()
+        # Set up RequestException as a proper exception class that doesn't catch everything
+        class MockRequestException(Exception):
+            pass
+        mock_requests.RequestException = MockRequestException
+        
+        # Create SDK with minimal retry config to avoid hanging
+        retry_config = RetryConfig()
+        retry_config.max_retries = 1
+        retry_config.initial_interval = 10
+        retry_config.max_interval = 10
+        
+        sdk = InfinoSDK("test_access", "test_secret", "https://test.infino.ws", retry_config)
+        
+        # Mock the session.request method properly
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = '{"success": true}'
+        sdk.session.request = Mock(return_value=mock_response)
+        
+        yield sdk
+
+
+@pytest.fixture
+def mock_sdk():
+    """Create a mock SDK instance for testing (alias for sdk_with_mock_session)"""
+    with patch('infino_sdk.lib.requests') as mock_requests:
+        # Set up RequestException as a proper exception class that doesn't catch everything
+        class MockRequestException(Exception):
+            pass
+        mock_requests.RequestException = MockRequestException
+        
+        # Create SDK with minimal retry config to avoid hanging
+        retry_config = RetryConfig()
+        retry_config.max_retries = 1
+        retry_config.initial_interval = 10
+        retry_config.max_interval = 10
+        
+        sdk = InfinoSDK("test_access", "test_secret", "https://test.infino.ws", retry_config)
+        
+        # Mock the session.request method properly
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = '{"success": true}'
+        sdk.session.request = Mock(return_value=mock_response)
+        
         yield sdk, mock_requests
 
 
@@ -152,12 +197,8 @@ def sample_user_response():
     """Sample user info response"""
     return {
         "test_user": {
-            "hash": "",
-            "backend_roles": ["admin"],
-            "attributes": {
-                "department": "engineering"
-            },
-            "opendistro_security_roles": ["all_access"]
+            "Version": "2025-01-01",
+            "Roles": ["admin", "analyst"]
         }
     }
 

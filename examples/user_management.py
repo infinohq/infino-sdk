@@ -4,7 +4,6 @@ User and Security Management with Infino SDK
 This example demonstrates:
 - Creating and managing users
 - Role creation and management
-- Role mapping
 - API key rotation
 """
 
@@ -20,34 +19,30 @@ def main():
     sdk = InfinoSDK(access_key, secret_key, endpoint)
     print("✅ Connected to Infino")
         
-        # Create a custom role
-        print("\n👤 Creating custom role...")
-        role_name = "data_analyst"
-        role_config = {
-            "cluster_permissions": [
-                "cluster:monitor/main",
-                "cluster:monitor/health"
-            ],
-            "index_permissions": [
-                {
-                    "index_patterns": ["analytics*", "logs*"],
-                    "allowed_actions": [
-                        "indices:data/read/search",
-                        "indices:data/read/msearch",
-                        "indices:data/read/get",
-                        "indices:monitor/stats"
-                    ]
-                },
-                {
-                    "index_patterns": ["reports*"],
-                    "allowed_actions": [
-                        "indices:data/read/*",
-                        "indices:data/write/index",
-                        "indices:data/write/update"
-                    ]
-                }
-            ]
-        }
+    # Create a custom role
+    print("\n👤 Creating custom role...")
+    role_name = "data_analyst"
+    role_config = """
+Version: 2025-01-01
+Permissions:
+  - ResourceType: record
+    Actions: [read]
+    Resources: ["analytics-*", "logs-*"]
+    Fields:
+      Mask:
+        secret: redact
+      Deny:
+        - password
+        - api_key
+  
+  - ResourceType: record
+    Actions: [read, write]
+    Resources: ["reports-*"]
+  
+  - ResourceType: metadata
+    Actions: [read]
+    Resources: ["*"]
+"""
         
     try:
         sdk.create_role(role_name, role_config)
@@ -58,18 +53,15 @@ def main():
         else:
             raise
 
-        # Create a user
+        # Create a user (simplified YAML)
         print("\n👤 Creating user...")
         username = "john_analyst"
-        user_config = {
-            "password": "SecureP@ssw0rd123!",
-            "backend_roles": ["analyst"],
-            "attributes": {
-                "department": "analytics",
-                "team": "data-science",
-                "email": "john@company.com"
-            }
-        }
+        user_config = """
+Version: 2025-01-01
+Password: SecureP@ssw0rd123!
+Roles:
+  - data_analyst
+"""
         
     try:
         sdk.create_user(username, user_config)
@@ -85,29 +77,15 @@ def main():
     try:
         user = sdk.get_user(username)
         print(f"User: {username}")
-        print(f"  Backend roles: {user.get(username, {}).get('backend_roles', [])}")
-        print(f"  Attributes: {user.get(username, {}).get('attributes', {})}")
+        # Simplified response typically includes 'Roles' and may include 'account_id'
+        obj = user.get(username, user)
+        roles = obj.get('Roles') or obj.get('roles') or []
+        account_id = obj.get('account_id') or obj.get('AccountId')
+        print(f"  Roles: {roles}")
+        if account_id:
+            print(f"  Account ID: {account_id}")
     except InfinoError as e:
         print(f"❌ Failed to get user: {e.message}")
-
-        # Create role mapping
-        print(f"\n🔗 Creating role mapping...")
-        mapping_name = "analyst_mapping"
-        mapping_config = {
-            "users": [username],
-            "backend_roles": ["analyst", "data-team"],
-            "hosts": ["*"],
-            "description": "Mapping for data analyst team"
-        }
-        
-    try:
-        sdk.create_role_mapping(mapping_name, mapping_config)
-        print(f"✅ Created role mapping: {mapping_name}")
-    except InfinoError as e:
-        if e.status_code() == 409:
-            print(f"ℹ️  Mapping {mapping_name} already exists")
-        else:
-            raise
 
         # List all users
     print(f"\n📋 Listing all users...")
@@ -129,22 +107,15 @@ def main():
     except InfinoError as e:
         print(f"❌ Failed to list roles: {e.message}")
 
-        # List role mappings
-    print(f"\n📋 Listing role mappings...")
-    try:
-        mappings = sdk.list_role_mappings()
-        print(f"Total mappings: {len(mappings)}")
-        for mapping_name in list(mappings.keys())[:5]:
-            print(f"  - {mapping_name}")
-    except InfinoError as e:
-        print(f"❌ Failed to list mappings: {e.message}")
-
         # Update user password
     print(f"\n🔄 Updating user password...")
     try:
-        update_config = {
-            "password": "NewSecureP@ssw0rd456!"
-        }
+        update_config = """
+Version: 2025-01-01
+Password: NewSecureP@ssw0rd456!
+Roles:
+  - data_analyst
+"""
         sdk.update_user(username, update_config)
         print(f"✅ Updated password for {username}")
     except InfinoError as e:
@@ -166,19 +137,12 @@ def main():
     try:
         account_info = sdk.get_user_account_info()
         print(f"Current user: {account_info.get('user_name', 'N/A')}")
-        print(f"Backend roles: {account_info.get('backend_roles', [])}")
         print(f"Roles: {account_info.get('roles', [])}")
     except InfinoError as e:
         print(f"❌ Failed to get account info: {e.message}")
 
         # Cleanup (optional - uncomment to clean up test resources)
         # print(f"\n🧹 Cleanup...")
-        # try:
-        #     await sdk.delete_role_mapping(mapping_name)
-        #     print(f"✅ Deleted role mapping: {mapping_name}")
-        # except InfinoError as e:
-        #     print(f"⚠️  Could not delete mapping: {e.message}")
-        
         # try:
         #     await sdk.delete_user(username)
         #     print(f"✅ Deleted user: {username}")

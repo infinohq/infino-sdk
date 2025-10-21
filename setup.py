@@ -11,6 +11,7 @@ setup(
         "requests>=2.25.0",
         "backoff>=2.0.0",
         "ratelimit>=2.2.1",
+        "PyYAML>=6.0",
     ],
     python_requires=">=3.7",
     classifiers=[

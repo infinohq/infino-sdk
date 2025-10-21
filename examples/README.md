@@ -1,6 +1,7 @@
 # Infino SDK Examples
 
-This directory contains comprehensive examples demonstrating how to use the Infino Python SDK.
+This directory contains comprehensive examples demonstrating how to use the Infino Python SDK,
+particularly for analysis from different data sources in your stack.
 
 ## Setup
 
@@ -22,7 +23,7 @@ export INFINO_ENDPOINT="https://api.infino.ai"
 **Basic search operations and queries**
 
 Learn how to:
-- Create indices
+- Create indices in FinoDB
 - Execute different types of queries (match_all, term, range, bool)
 - Count documents
 - Use aggregations

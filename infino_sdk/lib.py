@@ -17,6 +17,7 @@ import time
 import backoff
 import requests
 import websockets
+import yaml
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -779,18 +780,6 @@ class InfinoSDK:
         response = self.request("GET", url)
         return response
 
-    def list_role_mappings(self) -> Dict[str, Any]:
-        """List role mappings"""
-        url = f"{self.endpoint}/_plugins/_security/api/rolesmapping"
-        response = self.request("GET", url)
-        return response
-
-    def list_action_groups(self) -> Dict[str, Any]:
-        """List action groups"""
-        url = f"{self.endpoint}/_plugins/_security/api/actiongroups"
-        response = self.request("GET", url)
-        return response
-
     def generate_user_token(self, credentials: Dict[str, Any]) -> Dict[str, Any]:
         """Generate authentication token for a user"""
         url = f"{self.endpoint}/_plugins/_security/api/authtoken"
@@ -917,38 +906,6 @@ class InfinoSDK:
         """Delete a role"""
         return self.delete_security_resource("role", name)
 
-    def get_role_mapping(self, name: str) -> Dict[str, Any]:
-        """Get a role mapping"""
-        return self.get_security_resource("rolesmapping", name)
-
-    def create_role_mapping(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a role mapping"""
-        return self.create_security_resource("rolesmapping", name, config)
-
-    def update_role_mapping(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update a role mapping"""
-        return self.update_security_resource("rolesmapping", name, config)
-
-    def delete_role_mapping(self, name: str) -> Dict[str, Any]:
-        """Delete a role mapping"""
-        return self.delete_security_resource("rolesmapping", name)
-
-    def get_action_group(self, name: str) -> Dict[str, Any]:
-        """Get an action group"""
-        return self.get_security_resource("actiongroup", name)
-
-    def create_action_group(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create an action group"""
-        return self.create_security_resource("actiongroup", name, config)
-
-    def update_action_group(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update an action group"""
-        return self.update_security_resource("actiongroup", name, config)
-
-    def delete_action_group(self, name: str) -> Dict[str, Any]:
-        """Delete an action group"""
-        return self.delete_security_resource("actiongroup", name)
-
     # Security Config Operations
     def get_security_config(self) -> Dict[str, Any]:
         """Get security config"""
@@ -961,29 +918,6 @@ class InfinoSDK:
         url = f"{self.endpoint}/_plugins/_security/api/securityconfig"
         response = self.request("PUT", url, None, json.dumps(config))
         return response
-
-    def get_security_health(self) -> Dict[str, Any]:
-        """Get security health"""
-        url = f"{self.endpoint}/_plugins/_security/health"
-        response = self.request("GET", url)
-        return response
-
-    def get_tenant(self, name: str) -> Dict[str, Any]:
-        """Get a tenant"""
-        return self.get_security_resource("tenant", name)
-
-    def create_tenant(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a tenant"""
-        return self.create_security_resource("tenant", name, config)
-
-    def update_tenant(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update a tenant"""
-        return self.update_security_resource("tenant", name, config)
-
-    def delete_tenant(self, name: str) -> Dict[str, Any]:
-        """Delete a tenant"""
-        return self.delete_security_resource("tenant", name)
-
 
     def get_security_resource(self, resource_type: str, name: str) -> Dict[str, Any]:
         """Get a security resource"""
@@ -998,7 +932,27 @@ class InfinoSDK:
         url = f"{self.endpoint}/_plugins/_security/api/{resource_type}{plural}/{name}"
         logger.debug(f"Creating security resource: {resource_type} {name} at {url}")
         try:
-        response = self.request("PUT", url, None, json.dumps(config))
+            # For internaluser and role, accept YAML strings or dicts -> send as application/yaml
+            if resource_type in ("internaluser", "role"):
+                headers: Optional[Dict[str, str]] = {"Content-Type": "application/yaml"}
+                if isinstance(config, str):
+                    # Validate YAML
+                    try:
+                        yaml.safe_load(config)
+                    except Exception as e:
+                        raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}")
+                    body = config
+                else:
+                    # Convert dict to YAML
+                    try:
+                        body = yaml.safe_dump(config, sort_keys=False)
+                    except Exception as e:
+                        raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Failed to serialize YAML: {e}")
+                response = self.request("PUT", url, headers, body)
+            else:
+                # Other security resources remain JSON
+                response = self.request("PUT", url, None, json.dumps(config))
+
             logger.debug(f"Security resource created successfully: {response}")
             return response
         except Exception as e:
@@ -1009,6 +963,25 @@ class InfinoSDK:
         """Update a security resource"""
         plural = "" if resource_type == "rolesmapping" else "s"
         url = f"{self.endpoint}/_plugins/_security/api/{resource_type}{plural}/{name}"
+        # For internaluser and role, accept YAML strings or dicts -> send as application/yaml
+        if resource_type in ("internaluser", "role"):
+            headers: Optional[Dict[str, str]] = {"Content-Type": "application/yaml"}
+            if isinstance(config, str):
+                # Validate YAML
+                try:
+                    yaml.safe_load(config)
+                except Exception as e:
+                    raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}")
+                body = config
+            else:
+                # Convert dict to YAML
+                try:
+                    body = yaml.safe_dump(config, sort_keys=False)
+                except Exception as e:
+                    raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Failed to serialize YAML: {e}")
+            response = self.request("PATCH", url, headers, body)
+            return response
+        
         response = self.request("PATCH", url, None, json.dumps(config))
         return response
 
@@ -1109,53 +1082,61 @@ if __name__ == "__main__":
         @responses.activate
         def test_security_operations(self):
             """Test security API operations"""
-            # Test role operations
+            # Test role creation with new YAML format
             responses.add(
                 responses.PUT,
                 "http://localhost:8000/_plugins/_security/api/roles/test_role",
-                json={"status": "created"},
+                json={"status": "OK", "message": "'test_role' created."},
                 status=200,
                 match=[
                     responses.matchers.header_matcher({
                         "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
                         "x-amz-date": lambda x: len(x) == 16,
-                        "x-amz-content-sha256": lambda x: len(x) == 64
+                        "x-amz-content-sha256": lambda x: len(x) == 64,
+                        "content-type": "application/yaml"
                     })
                 ]
             )
 
-            role_config = {
-                "cluster_permissions": ["*"],
-                "index_permissions": [{
-                    "index_patterns": ["test*"],
-                    "allowed_actions": ["*"]
-                }]
-            }
+            role_config = """
+Version: 2025-01-01
+Permissions:
+  - ResourceType: record
+    Actions: [read, write]
+    Resources: ["test*"]
+  
+  - ResourceType: collection
+    Actions: [create, delete]
+    Resources: ["test*"]
+"""
 
             response = self.client.create_role("test_role", role_config)
-            self.assertEqual(response, {"status": "created"})
+            self.assertEqual(response["status"], "OK")
 
-            # Test role mapping operations
+            # Test user creation with role assignment
             responses.add(
                 responses.PUT,
-                "http://localhost:8000/_plugins/_security/api/rolesmapping/test_mapping",
-                json={"status": "created"},
+                "http://localhost:8000/_plugins/_security/api/internalusers/test_user",
+                json={"status": "OK", "message": "'test_user' created."},
                 status=200,
                 match=[
                     responses.matchers.header_matcher({
                         "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
                         "x-amz-date": lambda x: len(x) == 16,
-                        "x-amz-content-sha256": lambda x: len(x) == 64
+                        "x-amz-content-sha256": lambda x: len(x) == 64,
+                        "content-type": "application/yaml"
                     })
                 ]
             )
 
-            mapping_config = {
-                "users": ["test_user"],
-                "backend_roles": ["test_role"]
-            }
+            user_config = """
+Version: 2025-01-01
+Password: TestP@ssw0rd123!
+Roles:
+  - test_role
+"""
 
-            response = self.client.create_role_mapping("test_mapping", mapping_config)
-            self.assertEqual(response, {"status": "created"})
+            response = self.client.create_user("test_user", user_config)
+            self.assertEqual(response["status"], "OK")
 
     unittest.main() 
