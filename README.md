@@ -229,7 +229,7 @@ sdk.bulk_ingest("sales-correlation", bulk_data)
 info = sdk.get_index("sales-correlation")
 
 # List all FinoDB indices
-indices = sdk.get_cat_indices()
+indices = sdk.cat_indices()
 
 # Delete index
 sdk.delete_index("old-staging-2023")
