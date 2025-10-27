@@ -1,5 +1,5 @@
 """
-Tests for search operations
+Tests for query operations
 """
 
 import pytest
@@ -7,15 +7,15 @@ from infino_sdk.lib import InfinoSDK, InfinoError
 
 
 @pytest.mark.unit
-def test_search_success(sdk_with_mock_session, mock_response, sample_search_response):
-    """Test successful search"""
+def test_query_querydsl_success(sdk_with_mock_session, mock_response, sample_search_response):
+    """Test successful QueryDSL query"""
     sdk = sdk_with_mock_session
     
     # Mock the response
     response = mock_response(200, sample_search_response)
     sdk.session.request.return_value = response
     
-    result = sdk.search("test_index", '{"query": {"match_all": {}}}')
+    result = sdk.query_finodb_querydsl("test_dataset", '{"query": {"match_all": {}}}')
     
     assert "hits" in result
     assert result["hits"]["total"]["value"] == 100
@@ -23,8 +23,8 @@ def test_search_success(sdk_with_mock_session, mock_response, sample_search_resp
 
 
 @pytest.mark.unit
-def test_search_not_found(sdk_with_mock_session, mock_response):
-    """Test search with non-existent index"""
+def test_query_querydsl_not_found(sdk_with_mock_session, mock_response):
+    """Test query with non-existent dataset"""
     sdk = sdk_with_mock_session
     
     response = mock_response(404, text="index_not_found_exception")
@@ -37,55 +37,21 @@ def test_search_not_found(sdk_with_mock_session, mock_response):
 
 
 @pytest.mark.unit
-def test_search_ai(sdk_with_mock_session, mock_response, sample_search_response):
-    """Test AI-powered search"""
-    sdk = sdk_with_mock_session
-    
-    response = mock_response(200, sample_search_response)
-    sdk.session.request.return_value = response
-    
-    result = sdk.search_ai("test_index", "find me documents about testing")
-    
-    assert "hits" in result
-    assert isinstance(result["hits"], dict)
+# Test removed - search_ai not in public SDK
 
 
 @pytest.mark.unit
-def test_count(sdk_with_mock_session, mock_response):
-    """Test document count"""
+def test_count_records(sdk_with_mock_session, mock_response):
+    """Test record count"""
     sdk = sdk_with_mock_session
     
     count_response = {"count": 42}
     response = mock_response(200, count_response)
     sdk.session.request.return_value = response
     
-    result = sdk.count("test_index")
+    result = sdk.count("test_dataset")
     
     assert result["count"] == 42
 
 
-@pytest.mark.unit
-def test_msearch(sdk_with_mock_session, mock_response):
-    """Test multi-search"""
-    sdk = sdk_with_mock_session
-    
-    msearch_response = {
-        "responses": [
-            {"hits": {"total": {"value": 10}}},
-            {"hits": {"total": {"value": 20}}}
-        ]
-    }
-    response = mock_response(200, msearch_response)
-    sdk.session.request.return_value = response
-    
-    queries = '''
-    {"index": "index1"}
-    {"query": {"match_all": {}}}
-    {"index": "index2"}
-    {"query": {"match_all": {}}}
-    '''
-    
-    result = sdk.msearch(queries)
-    
-    assert "responses" in result
-    assert len(result["responses"]) == 2
+# Test removed - msearch not in public SDK

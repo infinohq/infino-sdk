@@ -25,7 +25,7 @@ def main():
     print("-" * 50)
     query = "SELECT * FROM products LIMIT 10"
     try:
-        result = sdk.sql(query)
+        result = sdk.query_finodb_sql(query)
         rows = result.get("rows", [])
         print(f"Retrieved {len(rows)} products")
         if rows:
@@ -44,7 +44,7 @@ def main():
     LIMIT 20
     """
     try:
-        result = sdk.sql(query)
+        result = sdk.query_finodb_sql(query)
         rows = result.get("rows", [])
         print(f"Found {len(rows)} in-stock products over $50")
         for row in rows[:5]:
@@ -68,7 +68,7 @@ def main():
     ORDER BY product_count DESC
     """
     try:
-        result = sdk.sql(query)
+        result = sdk.query_finodb_sql(query)
         rows = result.get("rows", [])
         print(f"Category Statistics:\n")
         for row in rows:
@@ -94,7 +94,7 @@ def main():
     ORDER BY avg_rating DESC
     """
     try:
-        result = sdk.sql(query)
+        result = sdk.query_finodb_sql(query)
         rows = result.get("rows", [])
         print(f"Top-rated categories (>100 products, >4.0 rating):\n")
         for row in rows:
@@ -117,7 +117,7 @@ def main():
     LIMIT 30
     """
     try:
-        result = sdk.sql(query)
+        result = sdk.query_finodb_sql(query)
         rows = result.get("rows", [])
         print(f"Daily Order Statistics (Last 30 days):\n")
         for row in rows[:10]:
@@ -139,7 +139,7 @@ def main():
     LIMIT 20
     """
     try:
-        result = sdk.sql(query)
+        result = sdk.query_finodb_sql(query)
         rows = result.get("rows", [])
         print(f"Top products by price in each category:\n")
         current_category = None
@@ -168,7 +168,7 @@ def main():
     LIMIT 15
     """
     try:
-        result = sdk.sql(query)
+        result = sdk.query_finodb_sql(query)
         rows = result.get("rows", [])
         print(f"Products priced above their category average:\n")
         for row in rows:
@@ -195,7 +195,7 @@ def main():
     LIMIT 20
     """
     try:
-        result = sdk.sql(query)
+        result = sdk.query_finodb_sql(query)
         rows = result.get("rows", [])
         print(f"Products by price tier:\n")
         for row in rows:

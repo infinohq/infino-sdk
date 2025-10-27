@@ -550,102 +550,104 @@ class InfinoSDK:
                 encoded += f"%{byte:02X}"
         return encoded
 
-    # Index Operations
-    def create_index(self, index: str) -> Dict[str, Any]:
-        """Create an index"""
-        url = f"{self.endpoint}/{index}"
+    # Dataset Operations
+    def create_finodb_dataset(self, dataset: str) -> Dict[str, Any]:
+        """Create an empty dataset in FinoDB"""
+        url = f"{self.endpoint}/finodb/{dataset}"
         try:
             response = self.request("PUT", url)
             return response
         except InfinoError as e:
-            # 409 CONFLICT is acceptable for index creation - it means the index already exists
+            # 409 CONFLICT is acceptable for dataset creation - it means the dataset already exists
             if e.status_code() == 409:
-                logger.debug(f"INFINO SDK: Index '{index}' already exists (409 CONFLICT), continuing")
-                return {"acknowledged": True, "index": index}
+                logger.debug(f"INFINO SDK: Dataset '{dataset}' already exists (409 CONFLICT), continuing")
+                return {"acknowledged": True, "index": dataset}
             raise
 
-    def create_index_with_mapping(self, index: str, mapping: Dict[str, Any]) -> Dict[str, Any]:
-        """Create an index with mapping"""
-        url = f"{self.endpoint}/{index}"
-        try:
-            response = self.request("PUT", url, None, json.dumps(mapping))
-            return response
-        except InfinoError as e:
-            # 409 CONFLICT is acceptable for index creation - it means the index already exists
-            if e.status_code() == 409:
-                logger.debug(f"INFINO SDK: Index '{index}' already exists (409 CONFLICT), continuing")
-                return {"acknowledged": True, "index": index}
-            raise
-
-    def delete_index(self, index: str) -> Dict[str, Any]:
-        """Delete an index"""
-        url = f"{self.endpoint}/{index}"
+    def delete_finodb_dataset(self, dataset: str) -> Dict[str, Any]:
+        """Delete a dataset from FinoDB"""
+        url = f"{self.endpoint}/finodb/{dataset}"
         response = self.request("DELETE", url)
         return response
 
-    def get_index(self, index: str) -> Dict[str, Any]:
-        """Get index information"""
-        url = f"{self.endpoint}/{index}"
+    def get_finodb_dataset_metadata(self, dataset: str) -> Dict[str, Any]:
+        """Query FinoDB dataset for its metadata"""
+        url = f"{self.endpoint}/finodb/{dataset}/metadata"
+        response = self.request("HEAD", url)
+        return response
+
+    def get_finodb_dataset_schema(self, dataset: str) -> Dict[str, Any]:
+        """Query FinoDB dataset for its schema"""
+        url = f"{self.endpoint}/finodb/{dataset}/schema"
+        response = self.request("HEAD", url)
+        return response
+
+    def get_all_finodb_datasets(self) -> List[Dict[str, Any]]:
+        """Query FinoDB for all metadata on current datasets"""
+        url = f"{self.endpoint}/finodb/metadata"
+        response = self.request("GET", url)
+        if isinstance(response, list):
+            return response
+        raise InfinoError(InfinoError.Type.INVALID_REQUEST, "Expected list of datasets")
+
+    # Record Operations
+    def get_record(self, dataset: str, record_id: str) -> Dict[str, Any]:
+        """Get a record from a dataset"""
+        url = f"{self.endpoint}/{dataset}/doc/{record_id}"
         response = self.request("GET", url)
         return response
 
-    def get_index_settings(self, index: str) -> Dict[str, Any]:
-        """Get index settings"""
-        url = f"{self.endpoint}/{index}/_settings"
-        response = self.request("GET", url)
-        return response
 
-    # Document Operations
-    def get_document(self, index: str, id: str) -> Dict[str, Any]:
-        """Get a document by id"""
-        url = f"{self.endpoint}/{index}/doc/{id}"
-        response = self.request("GET", url)
-        return response
-
-
-    # Search Operations
-    def search(self, index: str, query: str) -> Dict[str, Any]:
-        """Search an index"""
-        url = f"{self.endpoint}/{index}/_search"
+    # Query Operations - FinoDB
+    def query_finodb_querydsl(self, dataset: str, query: str) -> Dict[str, Any]:
+        """Query a FinoDB dataset in QueryDSL"""
+        url = f"{self.endpoint}/finodb/{dataset}/querydsl"
         response = self.request("GET", url, None, query)
         return response
 
-    def msearch(self, queries: str) -> Dict[str, Any]:
-        """Multi-search across indices"""
-        url = f"{self.endpoint}/_msearch"
-        response = self.request("POST", url, None, queries)
-        return response
-
-    def msearch_index(self, index: str, queries: str) -> Dict[str, Any]:
-        """Multi-search within a specific index"""
-        url = f"{self.endpoint}/{index}/_msearch"
-        response = self.request("POST", url, None, queries)
-        return response
-
-    def sql(self, query: str) -> Dict[str, Any]:
-        """Execute SQL query"""
-        url = f"{self.endpoint}/_sql"
+    def query_finodb_sql(self, query: str) -> Dict[str, Any]:
+        """Query FinoDB in SQL, including across multiple datasets"""
+        url = f"{self.endpoint}/finodb/sql"
         sql_request = {"query": query}
         json_body = json.dumps(sql_request)
-        response = self.request("POST", url, None, json_body)
+        response = self.request("GET", url, None, json_body)
         return response
 
-    # Alias for sql method to match test expectations
-    def sql_query(self, query: str) -> Dict[str, Any]:
-        """Alias for sql()"""
-        return self.sql(query)
+    def query_finodb_promql(self, query: str, dataset: Optional[str] = None) -> Dict[str, Any]:
+        """Query a FinoDB dataset in PromQL"""
+        from urllib.parse import quote
+        url = f"{self.endpoint}/api/v1/query"
 
-    # Bulk Operations
-    def bulk_ingest(self, index: str, payload: str) -> Dict[str, Any]:
-        """Bulk ingest NDJSON payload
+        form_data = f"query={quote(query)}"
+        if dataset:
+            form_data += f"&index={quote(dataset)}"
+
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        response = self.request("POST", url, headers, form_data)
+        return response
+
+    def query_finodb_promql_range(self, query: str, start: int, end: int, step: int, dataset: Optional[str] = None) -> Dict[str, Any]:
+        """Query a FinoDB dataset in PromQL with time range"""
+        from urllib.parse import quote
+        url = f"{self.endpoint}/api/v1/query_range"
+
+        form_data = f"query={quote(query)}&start={start}&end={end}&step={step}"
+        if dataset:
+            form_data += f"&index={quote(dataset)}"
+
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        response = self.request("POST", url, headers, form_data)
+        return response
+
+    # Correlate Operations - Upload to FinoDB
+    def upload_finodb_json(self, dataset: str, payload: str) -> Dict[str, Any]:
+        """Upload JSON records to FinoDB
         
         Args:
-            index: Index name
-            payload: NDJSON formatted bulk operations, where each line is a valid JSON object
-                    and operations are paired (action + source)
+            dataset: Dataset name
+            payload: NDJSON formatted bulk operations
         """
-        url = f"{self.endpoint}/{index}/_bulk"
-        # Add newline at end as required by bulk API
+        url = f"{self.endpoint}/finodb/{dataset}/json"
         if not payload.endswith('\n'):
             payload += '\n'
         response = self.request(
@@ -656,72 +658,26 @@ class InfinoSDK:
         )
         return response
 
-    def metrics(self, index: str, payload: str) -> Dict[str, Any]:
-        """Ingest Prometheus-style metrics payload"""
-        url = f"{self.endpoint}/{index}/_metrics"
+    def upsert_finodb(self, query: str) -> Dict[str, Any]:
+        """Upload SQL rows to FinoDB (upsert operations only)"""
+        url = f"{self.endpoint}/finodb/sql"
+        sql_request = {"query": query}
+        json_body = json.dumps(sql_request)
+        response = self.request("POST", url, None, json_body)
+        return response
+
+    def upload_finodb_metrics(self, dataset: str, payload: str) -> Dict[str, Any]:
+        """Upload Prometheus metrics to FinoDB"""
+        url = f"{self.endpoint}/finodb/{dataset}/metrics"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         response = self.request("POST", url, headers, payload)
         return response
 
-    # Metrics/Prometheus API
-    def prom_ql_query(self, query: str, index: Optional[str] = None) -> Dict[str, Any]:
-        """Execute PromQL instant query"""
-        from urllib.parse import quote
-        url = f"{self.endpoint}/api/v1/query"
-
-        form_data = f"query={quote(query)}"
-        if index:
-            form_data += f"&index={quote(index)}"
-
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        response = self.request("POST", url, headers, form_data)
+    def delete_finodb_records(self, dataset: str, query: str) -> Dict[str, Any]:
+        """Delete records from a FinoDB dataset"""
+        url = f"{self.endpoint}/finodb/{dataset}"
+        response = self.request("PATCH", url, None, query)
         return response
-
-    def prom_ql_query_range(self, query: str, start: int, end: int, step: int, index: Optional[str] = None) -> Dict[str, Any]:
-        """Execute PromQL range query"""
-        from urllib.parse import quote
-        url = f"{self.endpoint}/api/v1/query_range"
-
-        form_data = f"query={quote(query)}&start={start}&end={end}&step={step}"
-        if index:
-            form_data += f"&index={quote(index)}"
-
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        response = self.request("POST", url, headers, form_data)
-        return response
-
-    def prom_ql_labels(self) -> Dict[str, Any]:
-        """Get PromQL labels"""
-        url = f"{self.endpoint}/api/v1/labels"
-        response = self.request("GET", url)
-        return response
-
-    def prom_ql_label_values(self, label: str) -> Dict[str, Any]:
-        """Get label values"""
-        url = f"{self.endpoint}/api/v1/label/{label}/values"
-        response = self.request("GET", url)
-        return response
-
-    def prom_ql_series(self, matches: List[str]) -> Dict[str, Any]:
-        """Get time series for label matchers"""
-        url = f"{self.endpoint}/api/v1/series"
-        query = "&match[]=".join(matches)
-        url = f"{url}?match[]={query}"
-        response = self.request("GET", url)
-        return response
-
-    def prom_ql_build_info(self) -> Dict[str, Any]:
-        """Get Prometheus build info"""
-        url = f"{self.endpoint}/api/v1/status/buildinfo"
-        response = self.request("GET", url)
-        return response
-
-    def summarize(self, index: str, query: str) -> Dict[str, Any]:
-        """Summarize search results"""
-        url = f"{self.endpoint}/{index}/_summarize"
-        response = self.request("GET", url, None, query)
-        return response
-
 
     @classmethod
     def new(cls, access_key: str, secret_key: str, endpoint: str) -> 'InfinoSDK':
@@ -739,270 +695,197 @@ class InfinoSDK:
         """Constructor with custom retry config"""
         return cls(access_key, secret_key, endpoint, retry_config)
 
-    # User Account/Auth Operations
-    def get_user_account_info(self) -> Dict[str, Any]:
-        """Get current user account info"""
-        url = f"{self.endpoint}/_plugins/_security/api/account"
+    # Connect Operations - Data Sources
+    def get_sources(self) -> List[Dict[str, Any]]:
+        """Get a list of available data sources"""
+        url = f"{self.endpoint}/sources"
+        response = self.request("GET", url)
+        if isinstance(response, list):
+            return response
+        raise InfinoError(InfinoError.Type.INVALID_REQUEST, "Expected list of sources")
+
+    def get_connections(self) -> List[Dict[str, Any]]:
+        """Get a list of active data source connections"""
+        url = f"{self.endpoint}/sources/connections"
+        response = self.request("GET", url)
+        if isinstance(response, list):
+            return response
+        raise InfinoError(InfinoError.Type.INVALID_REQUEST, "Expected list of connections")
+
+    def create_connection(self, source_type: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Create data source connection"""
+        url = f"{self.endpoint}/source/{source_type}"
+        response = self.request("POST", url, None, json.dumps(config))
+        return response
+
+    def get_connection(self, connection_id: str) -> Dict[str, Any]:
+        """Get status of a data source connection"""
+        url = f"{self.endpoint}/source/{connection_id}"
         response = self.request("GET", url)
         return response
 
-    def get_user_auth_info(self) -> Dict[str, Any]:
-        """Get current user authentication info"""
-        url = f"{self.endpoint}/_plugins/_security/api/authinfo"
-        response = self.request("GET", url)
+    def update_connection(self, connection_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Update a data source connection"""
+        url = f"{self.endpoint}/source/{connection_id}"
+        response = self.request("PATCH", url, None, json.dumps(config))
         return response
 
+    def delete_connection(self, connection_id: str) -> Dict[str, Any]:
+        """Remove a data source connection"""
+        url = f"{self.endpoint}/source/{connection_id}"
+        response = self.request("DELETE", url)
+        return response
+
+    # Query Operations - Source Queries
+    def query_source(self, connection_id: str, dataset: str, query: str) -> Dict[str, Any]:
+        """Query a data source connection in its native DSL"""
+        url = f"{self.endpoint}/source/{connection_id}/{dataset}/dsl"
+        response = self.request("GET", url, None, query)
+        return response
+
+    def get_source_metadata(self, connection_id: str, dataset: str) -> Dict[str, Any]:
+        """Get metadata from a data source connection"""
+        url = f"{self.endpoint}/source/{connection_id}/{dataset}/metadata"
+        response = self.request("HEAD", url)
+        return response
+
+    # Correlate Operations - Import Jobs
+    def create_finodb_import_job(self, source_type: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Create import job from data source to FinoDB"""
+        url = f"{self.endpoint}/finodb/import/{source_type}"
+        response = self.request("PUT", url, None, json.dumps(config))
+        return response
+
+    def get_finodb_import_jobs(self) -> List[Dict[str, Any]]:
+        """Get FinoDB import job status"""
+        url = f"{self.endpoint}/finodb/import/jobs"
+        response = self.request("GET", url)
+        if isinstance(response, list):
+            return response
+        raise InfinoError(InfinoError.Type.INVALID_REQUEST, "Expected list of jobs")
+
+    def delete_finodb_import_job(self, job_id: str) -> Dict[str, Any]:
+        """Delete a FinoDB import job"""
+        url = f"{self.endpoint}/finodb/import/jobs/{job_id}"
+        response = self.request("DELETE", url)
+        return response
+
+    # Governance Operations
     def create_user(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a user"""
-        return self.create_security_resource("internaluser", name, config)
+        """Create a user in your account"""
+        url = f"{self.endpoint}/user"
+        # YAML only for users when config is a string; otherwise JSON
+        if isinstance(config, str):
+            try:
+                yaml.safe_load(config)  # syntax validation only
+            except Exception as e:
+                raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}")
+            headers = {"Content-Type": "application/yaml"}
+            body = config
+        else:
+            headers = None
+            body = json.dumps(config)
+        response = self.request("PUT", url, headers, body)
+        return response
 
     def get_user(self, name: str) -> Dict[str, Any]:
-        """Get user by name"""
-        return self.get_security_resource("internaluser", name)
+        """Get details for a user in your account"""
+        url = f"{self.endpoint}/user"
+        response = self.request("GET", url)
+        return response
 
     def update_user(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update user"""
-        return self.update_security_resource("internaluser", name, config)
+        """Update a user in your account"""
+        url = f"{self.endpoint}/user"
+        if isinstance(config, str):
+            try:
+                yaml.safe_load(config)
+            except Exception as e:
+                raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}")
+            headers = {"Content-Type": "application/yaml"}
+            body = config
+        else:
+            headers = None
+            body = json.dumps(config)
+        response = self.request("PATCH", url, headers, body)
+        return response
 
     def delete_user(self, name: str) -> Dict[str, Any]:
-        """Delete user"""
-        return self.delete_security_resource("internaluser", name)
+        """Delete a user in your account"""
+        url = f"{self.endpoint}/user"
+        response = self.request("DELETE", url)
+        return response
 
-    def list_users(self) -> Dict[str, Any]:
-        """List users"""
-        url = f"{self.endpoint}/_plugins/_security/api/internalusers"
+    def list_users(self, name: str) -> Dict[str, Any]:
+        """List the users in your account"""
+        url = f"{self.endpoint}/users"
         response = self.request("GET", url)
+        return response
+
+    def create_role(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a role in your account"""
+        url = f"{self.endpoint}/role"
+        if isinstance(config, str):
+            try:
+                yaml.safe_load(config)
+            except Exception as e:
+                raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}")
+            headers = {"Content-Type": "application/yaml"}
+            body = config
+        else:
+            headers = None
+            body = json.dumps(config)
+        response = self.request("PUT", url, headers, body)
+        return response
+
+    def get_role(self, name: str) -> Dict[str, Any]:
+        """Get details for a role in your account"""
+        url = f"{self.endpoint}/role"
+        response = self.request("GET", url)
+        return response
+
+    def update_role(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Update a role in your account"""
+        url = f"{self.endpoint}/role"
+        if isinstance(config, str):
+            try:
+                yaml.safe_load(config)
+            except Exception as e:
+                raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}")
+            headers = {"Content-Type": "application/yaml"}
+            body = config
+        else:
+            headers = None
+            body = json.dumps(config)
+        response = self.request("PATCH", url, headers, body)
+        return response
+
+    def delete_role(self, name: str) -> Dict[str, Any]:
+        """Delete a role in your account"""
+        url = f"{self.endpoint}/role"
+        response = self.request("DELETE", url)
         return response
 
     def list_roles(self) -> Dict[str, Any]:
-        """List roles"""
-        url = f"{self.endpoint}/_plugins/_security/api/roles"
-        response = self.request("GET", url)
-        return response
-
-    def generate_user_token(self, credentials: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate authentication token for a user"""
-        url = f"{self.endpoint}/_plugins/_security/api/authtoken"
-        response = self.request("POST", url, None, json.dumps(credentials))
-        return response
-
-    def get_source(self, index: str, doc_id: str) -> Dict[str, Any]:
-        """Get document source by id"""
-        url = f"{self.endpoint}/{index}/_source/{doc_id}"
+        """List the roles in your account"""
+        url = f"{self.endpoint}/roles"
         response = self.request("GET", url)
         return response
 
     def ping(self) -> Dict[str, Any]:
-        """Implementation for GET /"""
+        """Health check"""
         url = f"{self.endpoint}/"
         response = self.request("GET", url)
         return response
 
-    def mget(self, body: str) -> Dict[str, Any]:
-        """Multi-get documents"""
-        url = f"{self.endpoint}/_mget"
-        response = self.request("POST", url, None, body)
-        return response
-
-    def mget_index(self, index: str, body: str) -> Dict[str, Any]:
-        """Multi-get documents for a specific index"""
-        url = f"{self.endpoint}/{index}/_mget"
-        response = self.request("POST", url, None, body)
-        return response
-
-    def count(self, index: str, query: Optional[str] = None) -> Dict[str, Any]:
-        """Count documents"""
-        url = f"{self.endpoint}/{index}/_count"
-        response = self.request("GET", url, None, query)
-        return response
-
-    def document_exists(self, index: str, doc_id: str) -> bool:
-        """Check if a document exists"""
-        url = f"{self.endpoint}/{index}/_doc/{doc_id}"
-        try:
-            self.request("HEAD", url)
-            return True
-        except InfinoError as e:
-            if e.status_code() == 404:
-                return False
-            raise
-
-    def source_exists(self, index: str, doc_id: str) -> bool:
-        """Check if a document source exists"""
-        url = f"{self.endpoint}/{index}/_source/{doc_id}"
-        try:
-            self.request("HEAD", url)
-            return True
-        except InfinoError as e:
-            if e.status_code() == 404:
-                return False
-            raise
-
-    def index_info(self, index: str) -> Dict[str, Any]:
-        """Get index information"""
-        url = f"{self.endpoint}/{index}"
-        response = self.request("GET", url)
-        return response
-
-    def cat_indices(self) -> List[Dict[str, Any]]:
-        """List indices via _cat API"""
-        url = f"{self.endpoint}/_cat/indices"
-        response = self.request("GET", url)
-        json_response = response
-
-        # The response should be an array of indices
-        if isinstance(json_response, list):
-            return json_response
-        else:
-            raise InfinoError(
-                InfinoError.Type.INVALID_REQUEST,
-                "Unexpected response format from /_cat/indices endpoint"
-            )
-
-    def delete_by_query(self, index: str, query: str) -> Dict[str, Any]:
-        """Delete documents by query"""
-        url = f"{self.endpoint}/{index}/_delete_by_query"
-        response = self.request("DELETE", url, None, query)
-        return response
-
-    def get_schema(self, index: str) -> Dict[str, Any]:
-        """Get schema for an index"""
-        url = f"{self.endpoint}/{index}/_schema"
-        response = self.request("GET", url)
-        return response
-
-    def get_mappings(self, index: str) -> Dict[str, Any]:
-        """Get index mappings"""
-        url = f"{self.endpoint}/{index}/_mapping"
-        response = self.request("GET", url)
-        return response
-
-    def get_index_dir(self, index: str) -> Dict[str, Any]:
-        """Get index directory information"""
-        url = f"{self.endpoint}/{index}/_dir"
-        response = self.request("GET", url)
-        return response
-
-    def flush(self) -> Dict[str, Any]:
-        """Implementation for POST /_flush"""
-        url = f"{self.endpoint}/_flush"
-        response = self.request("POST", url)
-        return response
-
-    # Specific Resource Type Operations
-    def get_role(self, name: str) -> Dict[str, Any]:
-        """Get a role"""
-        return self.get_security_resource("role", name)
-
-    def create_role(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a role"""
-        return self.create_security_resource("role", name, config)
-
-    def update_role(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update a role"""
-        return self.update_security_resource("role", name, config)
-
-    def delete_role(self, name: str) -> Dict[str, Any]:
-        """Delete a role"""
-        return self.delete_security_resource("role", name)
-
-    # Security Config Operations
-    def get_security_config(self) -> Dict[str, Any]:
-        """Get security config"""
-        url = f"{self.endpoint}/_plugins/_security/api/securityconfig"
-        response = self.request("GET", url)
-        return response
-
-    def update_security_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update security config"""
-        url = f"{self.endpoint}/_plugins/_security/api/securityconfig"
-        response = self.request("PUT", url, None, json.dumps(config))
-        return response
-
-    def get_security_resource(self, resource_type: str, name: str) -> Dict[str, Any]:
-        """Get a security resource"""
-        plural = "" if resource_type == "rolesmapping" else "s"
-        url = f"{self.endpoint}/_plugins/_security/api/{resource_type}{plural}/{name}"
-        response = self.request("GET", url)
-        return response
-
-    def create_security_resource(self, resource_type: str, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a security resource"""
-        plural = "" if resource_type == "rolesmapping" else "s"
-        url = f"{self.endpoint}/_plugins/_security/api/{resource_type}{plural}/{name}"
-        logger.debug(f"Creating security resource: {resource_type} {name} at {url}")
-        try:
-            # For internaluser and role, accept YAML strings or dicts -> send as application/yaml
-            if resource_type in ("internaluser", "role"):
-                headers: Optional[Dict[str, str]] = {"Content-Type": "application/yaml"}
-                if isinstance(config, str):
-                    # Validate YAML
-                    try:
-                        yaml.safe_load(config)
-                    except Exception as e:
-                        raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}")
-                    body = config
-                else:
-                    # Convert dict to YAML
-                    try:
-                        body = yaml.safe_dump(config, sort_keys=False)
-                    except Exception as e:
-                        raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Failed to serialize YAML: {e}")
-                response = self.request("PUT", url, headers, body)
-            else:
-                # Other security resources remain JSON
-                response = self.request("PUT", url, None, json.dumps(config))
-
-            logger.debug(f"Security resource created successfully: {response}")
-            return response
-        except Exception as e:
-            logger.error(f"Failed to create security resource {resource_type} {name}: {e}")
-            raise
-
-    def update_security_resource(self, resource_type: str, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update a security resource"""
-        plural = "" if resource_type == "rolesmapping" else "s"
-        url = f"{self.endpoint}/_plugins/_security/api/{resource_type}{plural}/{name}"
-        # For internaluser and role, accept YAML strings or dicts -> send as application/yaml
-        if resource_type in ("internaluser", "role"):
-            headers: Optional[Dict[str, str]] = {"Content-Type": "application/yaml"}
-            if isinstance(config, str):
-                # Validate YAML
-                try:
-                    yaml.safe_load(config)
-                except Exception as e:
-                    raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}")
-                body = config
-            else:
-                # Convert dict to YAML
-                try:
-                    body = yaml.safe_dump(config, sort_keys=False)
-                except Exception as e:
-                    raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Failed to serialize YAML: {e}")
-            response = self.request("PATCH", url, headers, body)
-            return response
-        
-        response = self.request("PATCH", url, None, json.dumps(config))
-        return response
-
-    def delete_security_resource(self, resource_type: str, name: str) -> Dict[str, Any]:
-        """Delete a security resource"""
-        plural = "" if resource_type == "rolesmapping" else "s"
-        url = f"{self.endpoint}/_plugins/_security/api/{resource_type}{plural}/{name}"
-        response = self.request("DELETE", url)
-        return response
-
-    def rotate_api_keys(self, username: str) -> Dict[str, Any]:
-        """Rotate API keys for a user
-
-        Args:
-            username: Username to rotate keys for
+    def rotate_keys(self) -> Dict[str, Any]:
+        """Rotate API keys for current user
 
         Returns:
             New credentials (access_key and secret_key)
         """
-        url = f"{self.endpoint}/_account/users/{username}/rotate_keys"
-        response = self.request("GET", url)
+        url = f"{self.endpoint}/keys"
+        response = self.request("PATCH", url)
         return response
 
 # Error conversion implementations

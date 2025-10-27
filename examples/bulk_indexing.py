@@ -1,8 +1,8 @@
 """
-Bulk Indexing with Infino SDK
+Bulk Upload with Infino SDK
 
 This example demonstrates:
-- Bulk document indexing in NDJSON format
+- Uploading records in NDJSON format
 - Handling bulk operation results
 - Error handling for failed operations
 - Best practices for large datasets
@@ -14,11 +14,11 @@ import time
 from infino_sdk import InfinoSDK, InfinoError
 
 
-def generate_bulk_data(num_docs=1000):
-    """Generate NDJSON bulk data for indexing"""
+def generate_bulk_data(num_records=1000):
+    """Generate NDJSON bulk data for upload"""
     bulk_lines = []
     
-    for i in range(num_docs):
+    for i in range(num_records):
         # Action line
         action = {"index": {"_id": str(i)}}
         bulk_lines.append(json.dumps(action))
@@ -48,10 +48,10 @@ def main():
     sdk = InfinoSDK(access_key, secret_key, endpoint)
     print("✅ Connected to Infino")
         
-        index_name = "bulk_demo"
+        dataset_name = "bulk_demo"
         
-        # Create index with explicit mapping
-        print(f"\n📦 Creating index: {index_name}")
+        # Create dataset
+        print(f"\n📦 Creating dataset: {dataset_name}")
         mapping = {
             "mappings": {
                 "properties": {
@@ -68,27 +68,27 @@ def main():
         }
         
         try:
-            sdk.create_index_with_mapping(index_name, mapping)
-            print(f"✅ Index created successfully")
+            sdk.create_finodb_dataset(dataset_name)
+            print(f"✅ Dataset created successfully")
         except InfinoError as e:
             if e.status_code() == 409:
-                print(f"ℹ️  Index already exists, continuing...")
+                print(f"ℹ️  Dataset already exists, continuing...")
             else:
                 raise
 
-        # Bulk index documents
-        print(f"\n📤 Generating and indexing documents...")
+        # Upload records
+        print(f"\n📤 Generating and uploading records...")
         batch_size = 500
         total_docs = 5000
         
         for batch_num in range(0, total_docs, batch_size):
-            print(f"  Indexing batch {batch_num // batch_size + 1} (docs {batch_num} to {batch_num + batch_size})...")
+            print(f"  Uploading batch {batch_num // batch_size + 1} (records {batch_num} to {batch_num + batch_size})...")
             
             # Generate bulk data for this batch
             bulk_data = generate_bulk_data(batch_size)
             
             try:
-                result = sdk.bulk_ingest(index_name, bulk_data)
+                result = sdk.upload_finodb_json(dataset_name, bulk_data)
                 
                 # Check for errors
                 if result.get("errors"):
@@ -102,24 +102,24 @@ def main():
                                     print(f"    - {action} failed for doc {details.get('_id')}: {details.get('error')}")
                     print(f"  Total failed: {failed}")
                 else:
-                    print(f"  ✅ Batch indexed successfully")
+                    print(f"  ✅ Batch uploaded successfully")
                     
             except InfinoError as e:
-                print(f"  ❌ Bulk indexing failed: {e.message}")
+                print(f"  ❌ Bulk upload failed: {e.message}")
                 continue
         
-        # Verify indexing
-        print(f"\n🔍 Verifying indexed documents...")
+        # Verify upload
+        print(f"\n🔍 Verifying uploaded records...")
         time.sleep(1)  # Wait for refresh
         
-        count_result = sdk.count(index_name)
+        count_result = sdk.count(dataset_name)
         total_count = count_result.get("count", 0)
-        print(f"✅ Total documents indexed: {total_count}")
+        print(f"✅ Total records uploaded: {total_count}")
         
         # Sample query to verify data
         print(f"\n📊 Sample query results:")
         query = '{"query": {"match_all": {}}, "size": 3}'
-        results = sdk.search(index_name, query)
+        results = sdk.query_finodb_querydsl(dataset_name, query)
         
         for hit in results.get("hits", {}).get("hits", []):
             source = hit["_source"]
@@ -137,7 +137,7 @@ def main():
 '''
         
         result = sdk.bulk_ingest(index_name, update_data)
-        print(f"✅ Updated {len(result.get('items', []))} documents")
+        print(f"✅ Updated {len(result.get('items', []))} records")
         
         # Bulk delete example
         print(f"\n🗑️  Bulk delete example...")
@@ -147,7 +147,7 @@ def main():
 '''
         
         result = sdk.bulk_ingest(index_name, delete_data)
-        print(f"✅ Deleted {len(result.get('items', []))} documents")
+        print(f"✅ Deleted {len(result.get('items', []))} records")
 
 
 if __name__ == "__main__":

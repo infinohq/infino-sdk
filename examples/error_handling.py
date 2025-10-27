@@ -18,11 +18,11 @@ def handle_not_found_errors(sdk: InfinoSDK):
     print("-" * 50)
     
     try:
-        doc = sdk.get_document("nonexistent_index", "missing_doc")
-        print(f"Document found: {doc}")
+        record = sdk.get_record("nonexistent_dataset", "missing_record")
+        print(f"Record found: {record}")
     except InfinoError as e:
         if e.status_code() == 404:
-            print(f"✅ Handled gracefully: Document not found")
+            print(f"✅ Handled gracefully: Record not found")
             print(f"   Error type: {e.error_type.value}")
             print(f"   Message: {e.message}")
         else:
@@ -90,7 +90,7 @@ def handle_validation_errors(sdk: InfinoSDK):
     
     try:
         # Invalid JSON query
-        sdk.search("my_index", "this is not valid JSON")
+        sdk.query_finodb_querydsl("my_dataset", "this is not valid JSON")
     except InfinoError as e:
         if e.status_code() == 400:
             print(f"❌ Bad request:")
@@ -137,23 +137,23 @@ def graceful_degradation(sdk: InfinoSDK):
     print("\n🛡️  Example 6: Graceful Degradation")
     print("-" * 50)
     
-    # Try primary index first, fallback to secondary
-    primary_index = "products_v2"
-    fallback_index = "products"
+    # Try primary dataset first, fallback to secondary
+    primary_dataset = "products_v2"
+    fallback_dataset = "products"
     query = '{"query": {"match_all": {}}, "size": 10}'
     
     try:
-        print(f"Trying primary index: {primary_index}")
-        results = sdk.search(primary_index, query)
-        print(f"✅ Retrieved {len(results.get('hits', {}).get('hits', []))} documents from primary")
+        print(f"Trying primary dataset: {primary_dataset}")
+        results = sdk.query_finodb_querydsl(primary_dataset, query)
+        print(f"✅ Retrieved {len(results.get('hits', {}).get('hits', []))} records from primary")
     except InfinoError as e:
         if e.status_code() == 404:
-            print(f"⚠️  Primary index not found, trying fallback...")
+            print(f"⚠️  Primary dataset not found, trying fallback...")
             try:
-                results = sdk.search(fallback_index, query)
-                print(f"✅ Retrieved {len(results.get('hits', {}).get('hits', []))} documents from fallback")
+                results = sdk.query_finodb_querydsl(fallback_dataset, query)
+                print(f"✅ Retrieved {len(results.get('hits', {}).get('hits', []))} records from fallback")
             except InfinoError as fallback_error:
-                print(f"❌ Both indices failed: {fallback_error.message}")
+                print(f"❌ Both datasets failed: {fallback_error.message}")
                 # Use default/cached data or return empty result
                 results = {"hits": {"hits": []}}
                 print(f"ℹ️  Returning empty results")
@@ -166,21 +166,21 @@ def batch_operations_with_error_handling(sdk: InfinoSDK):
     print("\n📦 Example 7: Batch Operations with Error Handling")
     print("-" * 50)
     
-    indices_to_check = ["index1", "index2", "index3", "nonexistent"]
+    datasets_to_check = ["dataset1", "dataset2", "dataset3", "nonexistent"]
     successful = []
     failed = []
     
-    for index_name in indices_to_check:
+    for dataset_name in datasets_to_check:
         try:
-            info = sdk.get_index(index_name)
-            successful.append(index_name)
-            print(f"  ✅ {index_name}: OK")
+            metadata = sdk.get_finodb_dataset_metadata(dataset_name)
+            successful.append(dataset_name)
+            print(f"  ✅ {dataset_name}: OK")
         except InfinoError as e:
-            failed.append((index_name, e))
+            failed.append((dataset_name, e))
             if e.status_code() == 404:
-                print(f"  ⚠️  {index_name}: Not Found")
+                print(f"  ⚠️  {dataset_name}: Not Found")
             else:
-                print(f"  ❌ {index_name}: {e.message}")
+                print(f"  ❌ {dataset_name}: {e.message}")
     
     print(f"\nSummary:")
     print(f"  Successful: {len(successful)}")
@@ -200,7 +200,7 @@ def context_manager_error_handling():
         )
         # Multiple operations
         sdk.ping()
-        sdk.get_cat_indices()
+        sdk.get_all_finodb_datasets()
         print("✅ All operations completed")
     except InfinoError as e:
         print(f"❌ Operation failed: {e.message}")

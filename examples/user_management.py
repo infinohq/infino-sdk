@@ -122,9 +122,9 @@ Roles:
         print(f"❌ Failed to update user: {e.message}")
 
         # Rotate API keys
-    print(f"\n🔑 Rotating API keys for user...")
+    print(f"\n🔑 Rotating API keys...")
     try:
-        new_creds = sdk.rotate_api_keys(username)
+        new_creds = sdk.rotate_keys()
         print(f"✅ New credentials generated:")
         print(f"  Access Key: {new_creds.get('access_key', 'N/A')[:20]}...")
         print(f"  Secret Key: {new_creds.get('secret_key', 'N/A')[:20]}...")

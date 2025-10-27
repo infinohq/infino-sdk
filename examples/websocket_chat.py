@@ -175,8 +175,8 @@ async def conversation_with_multiple_messages():
     print(f"Starting conversation in thread: {thread_id}")
     
     queries = [
-        "What indices are available?",
-        "Show me a sample document from logs",
+        "What datasets are available?",
+        "Show me a sample record from logs",
         "Count the total number of log entries",
     ]
     

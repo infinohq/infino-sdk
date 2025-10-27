@@ -35,9 +35,9 @@ sdk = InfinoSDK(
 info = sdk.ping()
 print(f"Connected: {info}")
 
-# Execute a search
-results = sdk.search("my_index", '{"query": {"match_all": {}}}')
-print(f"Found {len(results.get('hits', {}).get('hits', []))} documents")
+# Query a dataset
+results = sdk.query_finodb_querydsl("my-dataset", '{"query": {"match_all": {}}}')
+print(f"Found {len(results.get('hits', {}).get('hits', []))} records")
 ```
 
 ## Getting Your Credentials
@@ -80,30 +80,29 @@ connection_config = {
         "password": "secret"
     }
 }
-connection = await sdk.create_connection(connection_config)
+connection = sdk.create_connection("elasticsearch", connection_config)
 print(f"Created connection: {connection['connection_id']}")
 
 # List all connections
-connections = await sdk.list_connections()
+connections = sdk.get_connections()
 
-# Test connection
-status = await sdk.test_connection("conn_abc123")
+# Get connection status
+status = sdk.get_connection("conn_abc123")
 ```
 
 ### Query Connected Sources
 
 ```python
 # Query external Elasticsearch (via connection_id)
-results = sdk.search(
-    "external_logs", 
-    '{"query": {"match_all": {}}}',
-    connection_id="conn_elasticsearch_prod"
+results = sdk.query_source(
+    connection_id="conn_elasticsearch_prod",
+    dataset="external_logs", 
+    query='{"query": {"match_all": {}}}'
 )
 
-# Query external Snowflake (via connection_id)
-results = sdk.sql(
-    "SELECT * FROM sales_data WHERE region='US' LIMIT 10",
-    connection_id="conn_snowflake_warehouse"
+# Query external Snowflake (via SQL)
+results = sdk.query_finodb_sql(
+    "SELECT * FROM sales_data WHERE region='US' LIMIT 10"
 )
 ```
 
@@ -116,49 +115,52 @@ Query any connected source or FinoDB with multiple interfaces.
 ### Natural Language (Fino AI)
 
 ```python
-async with InfinoSDK(access_key, secret_key, endpoint) as sdk:
-    # Connect to WebSocket for conversational queries
-    ws = await sdk.websocket_connect("/_conversation/ws")
+import asyncio
+import json
 
+async def query_with_fino():
+    sdk = InfinoSDK(access_key, secret_key, endpoint)
+    
+    # Connect to Fino WebSocket
+    ws = await sdk.websocket_connect("/_conversation/ws")
+    
     try:
-        # Ask natural language question
+        # Send your question
         await ws.send(json.dumps({
             "type": "query",
             "content": "What are the top 5 products by revenue?"
         }))
-
+        
         # Receive AI response
         async for message in ws:
             data = json.loads(message)
-            print(f"Response: {data}")
+            print(f"Fino: {data.get('content', '')}")
             if data.get("type") == "complete":
                 break
     finally:
         await ws.close()
+        sdk.close()
+
+# Run async
+asyncio.run(query_with_fino())
 ```
 
 ### SQL Queries
 
 ```python
-# Query any source (external or FinoDB) with SQL
-results = sdk.sql("SELECT * FROM products WHERE price > 100 LIMIT 10")
+# Query FinoDB with SQL
+results = sdk.query_finodb_sql("SELECT * FROM products WHERE price > 100 LIMIT 10")
 
 # With aggregations
-results = sdk.sql("SELECT category, AVG(price) FROM products GROUP BY category")
-
-# Query external source via connection_id
-results = sdk.sql(
-    "SELECT * FROM logs WHERE level='ERROR'",
-    connection_id="conn_elasticsearch"
-)
+results = sdk.query_finodb_sql("SELECT category, AVG(price) FROM products GROUP BY category")
 ```
 
 ### Query DSL
 
 ```python
-# Simple query
+# Simple query on FinoDB
 query = '{"query": {"match_all": {}}}'
-results = sdk.search("products", query)
+results = sdk.query_finodb_querydsl("products", query)
 
 # Complex query with filters
 query = '''
@@ -171,13 +173,13 @@ query = '''
   }
 }
 '''
-results = sdk.search("products", query)
+results = sdk.query_finodb_querydsl("products", query)
 
 # Query external source
-results = sdk.search(
-    "external_index",
-    query,
-    connection_id="conn_opensearch"
+results = sdk.query_source(
+    connection_id="conn_opensearch",
+    dataset="external_index",
+    query=query
 )
 ```
 
@@ -185,10 +187,10 @@ results = sdk.search(
 
 ```python
 # Instant query
-result = sdk.prom_ql_query('http_requests_total{status="200"}')
+result = sdk.query_finodb_promql('http_requests_total{status="200"}')
 
 # Range query
-result = sdk.prom_ql_query_range(
+result = sdk.query_finodb_promql_range(
     query='rate(http_requests_total[5m])',
     start=1609459200,
     end=1609545600,
@@ -207,29 +209,17 @@ Use FinoDB to pull together data from different sources for correlation and anal
 - **Staging**: Test queries before running in production
 - **Temporary Storage**: Hold intermediate results for complex workflows
 
-### Create Indices
+### Create Datasets
 
 ```python
-# Create FinoDB index for staging
-sdk.create_index("staging-analysis-2024")
-
-# With custom mapping
-mapping = {
-    "mappings": {
-        "properties": {
-            "product_id": {"type": "keyword"},
-            "revenue": {"type": "float"},
-            "@timestamp": {"type": "date"}
-        }
-    }
-}
-sdk.create_index_with_mapping("sales-correlation", mapping)
+# Create FinoDB dataset for staging
+sdk.create_finodb_dataset("staging-analysis-2024")
 ```
 
-### Ingest Data
+### Upload Data
 
 ```python
-# Bulk ingest to FinoDB for correlation
+# Upload records to FinoDB for correlation
 bulk_data = '''
 {"index": {"_id": "1"}}
 {"product_id": "A123", "revenue": 15000, "@timestamp": "2024-10-15"}
@@ -237,33 +227,30 @@ bulk_data = '''
 {"product_id": "B456", "revenue": 23000, "@timestamp": "2024-10-15"}
 '''
 
-sdk.bulk_ingest("sales-correlation", bulk_data)
+sdk.upload_finodb_json("sales-correlation", bulk_data)
 ```
 
-### Manage Indices
+### Manage Datasets
 
 ```python
-# Get index info
-info = sdk.get_index("sales-correlation")
+# Get dataset metadata
+metadata = sdk.get_finodb_dataset_metadata("sales-correlation")
 
-# List all FinoDB indices
-indices = sdk.get_cat_indices()
+# List all FinoDB datasets
+datasets = sdk.get_all_finodb_datasets()
 
-# Delete index
-sdk.delete_index("old-staging-2023")
+# Delete dataset
+sdk.delete_finodb_dataset("old-staging-2023")
 ```
 
-### Document Operations
+### Record Operations
 
 ```python
-# Get document
-doc = sdk.get_document("sales-correlation", "prod_123")
+# Get a record
+record = sdk.get_record("sales-correlation", "prod_123")
 
-# Count documents
-count = sdk.count("sales-correlation", '{"query": {"match_all": {}}}')
-
-# Delete by query
-sdk.delete_by_query("sales-correlation", '{"query": {"range": {"@timestamp": {"lt": "2024-01-01"}}}}')
+# Delete records
+sdk.delete_finodb_records("sales-correlation", '{"query": {"range": {"@timestamp": {"lt": "2024-01-01"}}}}')
 ```
 
 ## Govern – Security & Access Control
@@ -290,7 +277,7 @@ Permissions:
     Resources: ["*"]
 """
 
-await sdk.create_role("readonly-analyst", role_config)
+sdk.create_role("readonly-analyst", role_config)
 
 # Step 2: Create user and assign the role
 user_config = """
@@ -300,10 +287,10 @@ Roles:
   - readonly-analyst
 """
 
-await sdk.create_user("analytics-agent", user_config)
+sdk.create_user("analytics-agent", user_config)
 
 # Step 3: Rotate API keys when needed
-new_keys = await sdk.rotate_api_keys("analytics-agent")
+new_keys = sdk.rotate_keys()
 print(f"New access key: {new_keys['access_key']}")
 ```
 
@@ -311,10 +298,10 @@ print(f"New access key: {new_keys['access_key']}")
 
 ```python
 # List all users
-users = await sdk.list_users()
+users = sdk.list_users()
 
 # Get specific user
-user = await sdk.get_user("analytics-agent")
+user = sdk.get_user("analytics-agent")
 
 # Update user password or roles
 updated_config = """
@@ -324,10 +311,10 @@ Roles:
   - readonly-analyst
   - data-viewer
 """
-await sdk.update_user("analytics-agent", updated_config)
+sdk.update_user("analytics-agent", updated_config)
 
 # Delete user
-await sdk.delete_user("analytics-agent")
+sdk.delete_user("analytics-agent")
 ```
 
 ### Role Management
@@ -349,13 +336,13 @@ Permissions:
         - password
         - api_key
 """
-await sdk.create_role("privacy-compliant-analyst", role_with_masking)
+sdk.create_role("privacy-compliant-analyst", role_with_masking)
 
 # Get role details
-role = await sdk.get_role("readonly-analyst")
+role = sdk.get_role("readonly-analyst")
 
 # Delete role
-await sdk.delete_role("old-role")
+sdk.delete_role("old-role")
 ```
 
 ### Resource Types & Actions
@@ -364,9 +351,9 @@ Permissions use universal terminology that works across SQL, NoSQL, logs, and me
 
 | ResourceType | Actions | What It Controls |
 |--------------|---------|------------------|
-| `metadata` | `read` | View schemas, mappings, list collections |
-| `collection` | `create`, `delete` | Create/delete tables/indices |
-| `record` | `read`, `write` | Query/insert/update/delete data |
+| `metadata` | `read` | View schemas, mappings, list datasets |
+| `collection` | `create`, `delete` | Create/delete datasets |
+| `record` | `read`, `write` | Query/insert/update/delete records |
 | `field` | N/A | Controlled via `Fields` in record permissions |
 
 **Centralized Governance**: Apply consistent policies across all connected sources for both humans and agents.
@@ -378,11 +365,11 @@ from infino_sdk import InfinoSDK, InfinoError
 
 async with InfinoSDK(access_key, secret_key, endpoint) as sdk:
     try:
-        doc = await sdk.get_document("products", "missing_id")
+        record = sdk.get_record("products", "missing_id")
     except InfinoError as e:
         if e.error_type == InfinoError.Type.REQUEST:
             if e.status_code() == 404:
-                print("Document not found")
+                print("Record not found")
             elif e.status_code() == 403:
                 print("Access denied - check user permissions")
             elif e.status_code() == 401:

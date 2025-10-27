@@ -45,7 +45,7 @@ class TestPromQLInstantQueries:
         sdk._session.request.return_value = mock_response
         
         # Execute query
-        result = sdk.prom_ql_query('cpu_usage{host="server1"}', "test_index.aly")
+        result = sdk.query_finodb_promql('cpu_usage{host="server1"}', "test_dataset.aly")
         
         # Verify
         assert result["status"] == "success"
@@ -146,12 +146,12 @@ class TestPromQLRangeQueries:
         end_time = now + 120000
         step = 60
         
-        result = sdk.prom_ql_query_range(
+        result = sdk.query_finodb_promql_range(
             'cpu_usage{host="server1"}',
             start_time,
             end_time,
             step,
-            "test_index.aly"
+            "test_dataset.aly"
         )
         
         # Verify
@@ -432,7 +432,7 @@ class TestPromQLErrorHandling:
         
         # Execute query and expect error
         with pytest.raises(Exception):
-            sdk.prom_ql_query("cpu_usage{", "test_index.aly")
+            sdk.query_finodb_promql("cpu_usage{", "test_dataset.aly")
             
     def test_query_timeout(self, mock_sdk):
         """Test handling of query timeout"""
@@ -451,10 +451,10 @@ class TestPromQLErrorHandling:
         
         # Execute query and expect error
         with pytest.raises(Exception):
-            sdk.prom_ql_query("rate(cpu_usage[1h])", "test_index.aly")
+            sdk.query_finodb_promql("rate(cpu_usage[1h])", "test_dataset.aly")
             
-    def test_index_not_found(self, mock_sdk):
-        """Test handling of non-existent index"""
+    def test_dataset_not_found(self, mock_sdk):
+        """Test handling of non-existent dataset"""
         sdk, mock_requests = mock_sdk
         
         # Mock error response
@@ -468,4 +468,4 @@ class TestPromQLErrorHandling:
         
         # Execute query and expect error
         with pytest.raises(Exception):
-            sdk.prom_ql_query("cpu_usage", "nonexistent.aly")
+            sdk.query_finodb_promql("cpu_usage", "nonexistent.aly")
