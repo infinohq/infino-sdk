@@ -2,7 +2,7 @@
 Basic Query Operations with Infino SDK
 
 This example demonstrates:
-- Creating a dataset in FinoDB
+- Creating a dataset
 - Querying datasets with QueryDSL
 - Using different query types
 - Working with records
@@ -24,7 +24,7 @@ def main():
     # Create a dataset
     dataset_name = "demo_products"
     try:
-        sdk.create_finodb_dataset(dataset_name)
+        sdk.create_dataset(dataset_name)
         print(f"✅ Created dataset: {dataset_name}")
     except InfinoError as e:
         if e.status_code() == 409:
@@ -35,7 +35,7 @@ def main():
     # Match all query
     print("\n--- Match All Query ---")
     query = '{"query": {"match_all": {}}, "size": 5}'
-    results = sdk.query_finodb_querydsl(dataset_name, query)
+    results = sdk.query_dataset_in_querydsl(dataset_name, query)
     hits = results.get("hits", {}).get("hits", [])
     print(f"Found {results.get('hits', {}).get('total', {}).get('value', 0)} records")
     for hit in hits[:3]:
@@ -44,7 +44,7 @@ def main():
     # Term query
     print("\n--- Term Query ---")
     query = '{"query": {"term": {"category": "electronics"}}}'
-    results = sdk.query_finodb_querydsl(dataset_name, query)
+    results = sdk.query_dataset_in_querydsl(dataset_name, query)
     hits = results.get("hits", {}).get("hits", [])
     print(f"Found {len(hits)} electronics products")
 
@@ -63,7 +63,7 @@ def main():
         "sort": [{"price": "asc"}]
     }
     '''
-    results = sdk.query_finodb_querydsl(dataset_name, query)
+    results = sdk.query_dataset_in_querydsl(dataset_name, query)
     hits = results.get("hits", {}).get("hits", [])
     print(f"Found {len(hits)} products priced between $10-$100")
     for hit in hits[:5]:
@@ -89,7 +89,7 @@ def main():
         }
     }
     '''
-    results = sdk.query_finodb_querydsl(dataset_name, query)
+    results = sdk.query_dataset_in_querydsl(dataset_name, query)
     print(f"Found {len(results.get('hits', {}).get('hits', []))} in-stock products under $50")
 
     # Count records
@@ -117,7 +117,7 @@ def main():
         }
     }
     '''
-    results = sdk.query_finodb_querydsl(dataset_name, query)
+    results = sdk.query_dataset_in_querydsl(dataset_name, query)
     aggs = results.get("aggregations", {})
 
     if "categories" in aggs:

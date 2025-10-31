@@ -25,7 +25,7 @@ def main():
         # Create a dataset for metrics (suffix .aly for analytics)
         dataset_name = "metrics_example.aly"
         print(f"Creating dataset: {dataset_name}")
-        sdk.create_finodb_dataset(dataset_name)
+        sdk.create_dataset(dataset_name)
         
         # Ingest metrics in Prometheus exposition format
         # Format: metric_name{label1="value1",label2="value2"} value timestamp
@@ -40,7 +40,7 @@ memory_usage{{host="server1",env="production",region="us-east"}} 88.5 {now + 300
 """
         
         print("Uploading metrics data...")
-        result = sdk.upload_finodb_metrics(dataset_name, metrics_data)
+        result = sdk.upload_metrics_to_dataset(dataset_name, metrics_data)
         print(f"Metrics ingested: {result}")
         
         # Wait a moment for indexing
@@ -49,7 +49,7 @@ memory_usage{{host="server1",env="production",region="us-east"}} 88.5 {now + 300
         # Example 1: Simple PromQL instant query
         print("\n=== Example 1: Instant Query ===")
         promql_query = 'cpu_usage{host="server1"}'
-        instant_result = sdk.query_finodb_promql(promql_query, dataset_name)
+        instant_result = sdk.query_dataset_in_promql(promql_query, dataset_name)
         print(f"Query: {promql_query}")
         print(f"Result: {instant_result}")
         
@@ -59,7 +59,7 @@ memory_usage{{host="server1",env="production",region="us-east"}} 88.5 {now + 300
         end_time = now + 360000   # 6 minutes after first metric
         step = 60  # 60 second step
         
-        range_result = sdk.query_finodb_promql_range(
+        range_result = sdk.query_dataset_in_promql_range(
             promql_query,
             start_time,
             end_time,
@@ -120,7 +120,7 @@ memory_usage{{host="server1",env="production",region="us-east"}} 88.5 {now + 300
         
         # Cleanup
         print(f"\nCleaning up: Deleting dataset {dataset_name}")
-        sdk.delete_finodb_dataset(dataset_name)
+        sdk.delete_dataset(dataset_name)
         print("Example completed successfully!")
         
     except Exception as e:

@@ -90,7 +90,7 @@ def handle_validation_errors(sdk: InfinoSDK):
     
     try:
         # Invalid JSON query
-        sdk.query_finodb_querydsl("my_dataset", "this is not valid JSON")
+        sdk.query_dataset_in_querydsl("my_dataset", "this is not valid JSON")
     except InfinoError as e:
         if e.status_code() == 400:
             print(f"❌ Bad request:")
@@ -144,13 +144,13 @@ def graceful_degradation(sdk: InfinoSDK):
     
     try:
         print(f"Trying primary dataset: {primary_dataset}")
-        results = sdk.query_finodb_querydsl(primary_dataset, query)
+        results = sdk.query_dataset_in_querydsl(primary_dataset, query)
         print(f"✅ Retrieved {len(results.get('hits', {}).get('hits', []))} records from primary")
     except InfinoError as e:
         if e.status_code() == 404:
             print(f"⚠️  Primary dataset not found, trying fallback...")
             try:
-                results = sdk.query_finodb_querydsl(fallback_dataset, query)
+                results = sdk.query_dataset_in_querydsl(fallback_dataset, query)
                 print(f"✅ Retrieved {len(results.get('hits', {}).get('hits', []))} records from fallback")
             except InfinoError as fallback_error:
                 print(f"❌ Both datasets failed: {fallback_error.message}")
@@ -172,7 +172,7 @@ def batch_operations_with_error_handling(sdk: InfinoSDK):
     
     for dataset_name in datasets_to_check:
         try:
-            metadata = sdk.get_finodb_dataset_metadata(dataset_name)
+            metadata = sdk.get_dataset_metadata(dataset_name)
             successful.append(dataset_name)
             print(f"  ✅ {dataset_name}: OK")
         except InfinoError as e:
@@ -200,7 +200,7 @@ def context_manager_error_handling():
         )
         # Multiple operations
         sdk.ping()
-        sdk.get_all_finodb_datasets()
+        sdk.get_all_datasets()
         print("✅ All operations completed")
     except InfinoError as e:
         print(f"❌ Operation failed: {e.message}")

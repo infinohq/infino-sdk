@@ -36,7 +36,7 @@ info = sdk.ping()
 print(f"Connected: {info}")
 
 # Query a dataset
-results = sdk.query_finodb_querydsl("my-dataset", '{"query": {"match_all": {}}}')
+results = sdk.query_dataset_in_querydsl("my-dataset", '{"query": {"match_all": {}}}')
 print(f"Found {len(results.get('hits', {}).get('hits', []))} records")
 ```
 
@@ -61,7 +61,7 @@ print(f"Found {len(results.get('hits', {}).get('hits', []))} records")
 
 ## Connect – Access Data Sources
 
-Connect to external sources and query them in place—no ETL, no data movement required.
+Connect to data sources and query them in place.
 
 ### Create Connections
 
@@ -93,24 +93,24 @@ status = sdk.get_connection("conn_abc123")
 ### Query Connected Sources
 
 ```python
-# Query external Elasticsearch (via connection_id)
+# Query Elasticsearch (via QueryDSL)
 results = sdk.query_source(
     connection_id="conn_elasticsearch_prod",
     dataset="external_logs", 
     query='{"query": {"match_all": {}}}'
 )
 
-# Query external Snowflake (via SQL)
-results = sdk.query_finodb_sql(
+# Query Snowflake (via SQL)
+results = sdk.query_dataset_in_sql(
     "SELECT * FROM sales_data WHERE region='US' LIMIT 10"
 )
 ```
 
-**No ETL**: Data stays in your external sources. Infino queries it where it lives.
+**No ETL**: Data stays in your sources. Infino queries it where it lives.
 
 ## Query – Ask Questions
 
-Query any connected source or FinoDB with multiple interfaces.
+Query any connected source or dataset with multiple interfaces.
 
 ### Natural Language (Fino AI)
 
@@ -145,22 +145,59 @@ async def query_with_fino():
 asyncio.run(query_with_fino())
 ```
 
+### Manage Conversation Threads
+
+```python
+# Create and manage Fino conversation threads
+sdk = InfinoSDK(access_key, secret_key, endpoint)
+
+# List existing threads
+threads = sdk.list_threads()
+
+# Create a new thread with optional metadata
+thread = sdk.create_thread({
+    "name": "Sales Analysis",
+    "workflow_name": "alpha_v1"
+})
+
+# Add a message to the thread
+sdk.add_thread_message(thread["id"], {
+    "content": {
+        "user_query": "What are the top 5 regions by revenue?"
+    },
+    "role": "user"
+})
+
+# Send a message using the simplified API (thread_id in payload)
+sdk.send_message({
+    "thread_id": thread["id"],
+    "content": {
+        "user_query": "Show me week-over-week trends"
+    },
+    "role": "user"
+})
+
+# Clean up when finished
+sdk.clear_thread_messages(thread["id"])
+sdk.delete_thread(thread["id"])
+```
+
 ### SQL Queries
 
 ```python
-# Query FinoDB with SQL
-results = sdk.query_finodb_sql("SELECT * FROM products WHERE price > 100 LIMIT 10")
+# Query a dataset with SQL
+results = sdk.query_dataset_in_sql("SELECT * FROM products WHERE price > 100 LIMIT 10")
 
 # With aggregations
-results = sdk.query_finodb_sql("SELECT category, AVG(price) FROM products GROUP BY category")
+results = sdk.query_dataset_in_sql("SELECT category, AVG(price) FROM products GROUP BY category")
 ```
 
 ### Query DSL
 
 ```python
-# Simple query on FinoDB
+# Simple query on a dataset
 query = '{"query": {"match_all": {}}}'
-results = sdk.query_finodb_querydsl("products", query)
+results = sdk.query_dataset_in_querydsl("products", query)
 
 # Complex query with filters
 query = '''
@@ -173,12 +210,12 @@ query = '''
   }
 }
 '''
-results = sdk.query_finodb_querydsl("products", query)
+results = sdk.query_dataset_in_querydsl("products", query)
 
-# Query external source
+# Query data source
 results = sdk.query_source(
     connection_id="conn_opensearch",
-    dataset="external_index",
+    dataset="dataset",
     query=query
 )
 ```
@@ -187,10 +224,10 @@ results = sdk.query_source(
 
 ```python
 # Instant query
-result = sdk.query_finodb_promql('http_requests_total{status="200"}')
+result = sdk.query_dataset_in_promql('http_requests_total{status="200"}')
 
 # Range query
-result = sdk.query_finodb_promql_range(
+result = sdk.query_dataset_in_promql_range(
     query='rate(http_requests_total[5m])',
     start=1609459200,
     end=1609545600,
@@ -200,11 +237,11 @@ result = sdk.query_finodb_promql_range(
 
 ## Correlate – Cross-Source Operations
 
-Use FinoDB to pull together data from different sources for correlation and analysis without schemas.
+Use datasets to pull together data from different sources for correlation and analysis without schemas.
 
-### When to Use FinoDB
+### When to Use Datasets
 
-- **Cross-Source Joins**: Correlate data from multiple external sources
+- **Cross-Source Joins**: Correlate data from multiple data sources
 - **Unified Analysis**: Ask deeper questions across silos
 - **Staging**: Test queries before running in production
 - **Temporary Storage**: Hold intermediate results for complex workflows
@@ -212,14 +249,14 @@ Use FinoDB to pull together data from different sources for correlation and anal
 ### Create Datasets
 
 ```python
-# Create FinoDB dataset for staging
-sdk.create_finodb_dataset("staging-analysis-2024")
+# Create a dataset for staging
+sdk.create_dataset("staging-analysis-2024")
 ```
 
 ### Upload Data
 
 ```python
-# Upload records to FinoDB for correlation
+# Upload records to a dataset for correlation
 bulk_data = '''
 {"index": {"_id": "1"}}
 {"product_id": "A123", "revenue": 15000, "@timestamp": "2024-10-15"}
@@ -227,20 +264,20 @@ bulk_data = '''
 {"product_id": "B456", "revenue": 23000, "@timestamp": "2024-10-15"}
 '''
 
-sdk.upload_finodb_json("sales-correlation", bulk_data)
+sdk.upload_json_to_dataset("sales-correlation", bulk_data)
 ```
 
 ### Manage Datasets
 
 ```python
 # Get dataset metadata
-metadata = sdk.get_finodb_dataset_metadata("sales-correlation")
+metadata = sdk.get_dataset_metadata("sales-correlation")
 
-# List all FinoDB datasets
-datasets = sdk.get_all_finodb_datasets()
+# List all datasets
+datasets = sdk.get_all_datasets()
 
 # Delete dataset
-sdk.delete_finodb_dataset("old-staging-2023")
+sdk.delete_dataset("old-staging-2023")
 ```
 
 ### Record Operations
@@ -250,7 +287,23 @@ sdk.delete_finodb_dataset("old-staging-2023")
 record = sdk.get_record("sales-correlation", "prod_123")
 
 # Delete records
-sdk.delete_finodb_records("sales-correlation", '{"query": {"range": {"@timestamp": {"lt": "2024-01-01"}}}}')
+sdk.delete_records("sales-correlation", '{"query": {"range": {"@timestamp": {"lt": "2024-01-01"}}}}')
+```
+
+### Dataset Enrichment
+
+```python
+# Configure enrichment for a dataset
+import json
+
+enrich_policy = json.dumps({
+    "enrich_policy": {
+        "match_field": "user_id",
+        "enrich_fields": ["email", "name", "department"]
+    }
+})
+
+sdk.enrich_dataset("sales-correlation", enrich_policy)
 ```
 
 ## Govern – Security & Access Control
@@ -416,15 +469,15 @@ sdk.ping()
 Complete working examples organized by workflow:
 
 ### Connect Examples
-- [**basic_search.py**](examples/basic_search.py) - Query external sources with Query DSL
+- [**basic_query.py**](examples/basic_query.py) - Query data sources with Query DSL
 
 ### Query Examples
 - [**sql_analytics.py**](examples/sql_analytics.py) - SQL queries across sources
-- [**websocket_chat.py**](examples/websocket_chat.py) - Natural language with Fino AI
+- [**fino_nl.py**](examples/fino_nl.py) - Natural language with Fino AI
 - [**promql_metrics.py**](examples/promql_metrics.py) - PromQL time-series queries
 
 ### Analyze Examples
-- [**bulk_indexing.py**](examples/bulk_indexing.py) - Pull data together for cross-source analysis
+- [**upload_json.py**](examples/upload_json.py) - Pull data together for cross-source analysis
 
 ### Govern Examples
 - [**user_management.py**](examples/user_management.py) - Centralized access control

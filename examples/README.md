@@ -19,21 +19,21 @@ export INFINO_ENDPOINT="https://api.infino.ai"
 
 ## Examples
 
-### [basic_search.py](basic_search.py)
+### [basic_query.py](basic_query.py)
 **Basic search operations and queries**
 
 Learn how to:
-- Create indices in FinoDB
+- Create indices
 - Execute different types of queries (match_all, term, range, bool)
 - Count documents
 - Use aggregations
 - Sort and filter results
 
 ```bash
-python examples/basic_search.py
+python examples/basic_query.py
 ```
 
-### [bulk_indexing.py](bulk_indexing.py)
+### [upload_json.py](upload_json.py)
 **Bulk document operations**
 
 Learn how to:
@@ -43,7 +43,7 @@ Learn how to:
 - Implement batch processing
 
 ```bash
-python examples/bulk_indexing.py
+python examples/upload_json.py
 ```
 
 ### [user_management.py](user_management.py)
@@ -60,7 +60,7 @@ Learn how to:
 python examples/user_management.py
 ```
 
-### [websocket_chat.py](websocket_chat.py)
+### [fino_nl.py](fino_nl.py)
 **Natural Language Queriesn**
 
 Learn how to:
@@ -72,7 +72,7 @@ Learn how to:
 - Handle WebSocket errors gracefully
 
 ```bash
-python examples/websocket_chat.py
+python examples/fino_nl.py
 ```
 
 ### [sql_analytics.py](sql_analytics.py)
@@ -124,10 +124,10 @@ All examples can be run directly:
 
 ```bash
 # Run a specific example
-python examples/basic_search.py
+python examples/basic_query.py
 
 # Or with explicit credentials
-INFINO_ACCESS_KEY="your_key" INFINO_SECRET_KEY="your_secret" python examples/basic_search.py
+INFINO_ACCESS_KEY="your_key" INFINO_SECRET_KEY="your_secret" python examples/basic_query.py
 ```
 
 ## Common Patterns

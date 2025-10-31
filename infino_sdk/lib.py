@@ -551,9 +551,9 @@ class InfinoSDK:
         return encoded
 
     # Dataset Operations
-    def create_finodb_dataset(self, dataset: str) -> Dict[str, Any]:
-        """Create an empty dataset in FinoDB"""
-        url = f"{self.endpoint}/finodb/{dataset}"
+    def create_dataset(self, dataset: str) -> Dict[str, Any]:
+        """Create an empty dataset"""
+        url = f"{self.endpoint}/{dataset}"
         try:
             response = self.request("PUT", url)
             return response
@@ -564,31 +564,82 @@ class InfinoSDK:
                 return {"acknowledged": True, "index": dataset}
             raise
 
-    def delete_finodb_dataset(self, dataset: str) -> Dict[str, Any]:
-        """Delete a dataset from FinoDB"""
-        url = f"{self.endpoint}/finodb/{dataset}"
+    def delete_dataset(self, dataset: str) -> Dict[str, Any]:
+        """Delete a dataset"""
+        url = f"{self.endpoint}/{dataset}"
         response = self.request("DELETE", url)
         return response
 
-    def get_finodb_dataset_metadata(self, dataset: str) -> Dict[str, Any]:
-        """Query FinoDB dataset for its metadata"""
-        url = f"{self.endpoint}/finodb/{dataset}/metadata"
+    def get_dataset_metadata(self, dataset: str) -> Dict[str, Any]:
+        """Query a dataset for its metadata"""
+        url = f"{self.endpoint}/{dataset}/metadata"
         response = self.request("HEAD", url)
         return response
 
-    def get_finodb_dataset_schema(self, dataset: str) -> Dict[str, Any]:
-        """Query FinoDB dataset for its schema"""
-        url = f"{self.endpoint}/finodb/{dataset}/schema"
+    def get_dataset_schema(self, dataset: str) -> Dict[str, Any]:
+        """Query a dataset for its schema"""
+        url = f"{self.endpoint}/{dataset}/schema"
         response = self.request("HEAD", url)
         return response
 
-    def get_all_finodb_datasets(self) -> List[Dict[str, Any]]:
-        """Query FinoDB for all metadata on current datasets"""
-        url = f"{self.endpoint}/finodb/metadata"
+    def get_all_datasets(self) -> List[Dict[str, Any]]:
+        """Query Infino for all metadata on current datasets"""
+        url = f"{self.endpoint}/metadata"
         response = self.request("GET", url)
         if isinstance(response, list):
             return response
         raise InfinoError(InfinoError.Type.INVALID_REQUEST, "Expected list of datasets")
+
+    # Fino AI Thread Operations
+    def list_threads(self) -> List[Dict[str, Any]]:
+        """List all Fino conversation threads"""
+        url = f"{self.endpoint}/fino/threads"
+        response = self.request("GET", url)
+        if isinstance(response, list):
+            return response
+        raise InfinoError(InfinoError.Type.INVALID_REQUEST, "Expected list of threads")
+
+    def create_thread(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new Fino conversation thread"""
+        url = f"{self.endpoint}/fino/threads"
+        response = self.request("POST", url, None, json.dumps(config))
+        return response
+
+    def get_thread(self, thread_id: str) -> Dict[str, Any]:
+        """Retrieve a specific Fino conversation thread"""
+        url = f"{self.endpoint}/fino/threads/{thread_id}"
+        response = self.request("GET", url)
+        return response
+
+    def update_thread(self, thread_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Update a Fino conversation thread"""
+        url = f"{self.endpoint}/fino/threads/{thread_id}"
+        response = self.request("PUT", url, None, json.dumps(config))
+        return response
+
+    def delete_thread(self, thread_id: str) -> Dict[str, Any]:
+        """Delete a Fino conversation thread"""
+        url = f"{self.endpoint}/fino/threads/{thread_id}"
+        response = self.request("DELETE", url)
+        return response
+
+    def add_thread_message(self, thread_id: str, message: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a message to a specific Fino thread"""
+        url = f"{self.endpoint}/fino/threads/{thread_id}/messages"
+        response = self.request("POST", url, None, json.dumps(message))
+        return response
+
+    def clear_thread_messages(self, thread_id: str) -> Dict[str, Any]:
+        """Remove all messages from a Fino thread"""
+        url = f"{self.endpoint}/fino/threads/{thread_id}/messages"
+        response = self.request("DELETE", url)
+        return response
+
+    def send_message(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Send a message to Fino using the simplified API"""
+        url = f"{self.endpoint}/fino/message"
+        response = self.request("POST", url, None, json.dumps(payload))
+        return response
 
     # Record Operations
     def get_record(self, dataset: str, record_id: str) -> Dict[str, Any]:
@@ -598,25 +649,25 @@ class InfinoSDK:
         return response
 
 
-    # Query Operations - FinoDB
-    def query_finodb_querydsl(self, dataset: str, query: str) -> Dict[str, Any]:
-        """Query a FinoDB dataset in QueryDSL"""
-        url = f"{self.endpoint}/finodb/{dataset}/querydsl"
+    # Query Operations - Datasets
+    def query_dataset_in_querydsl(self, dataset: str, query: str) -> Dict[str, Any]:
+        """Query a dataset in QueryDSL"""
+        url = f"{self.endpoint}/{dataset}/querydsl"
         response = self.request("GET", url, None, query)
         return response
 
-    def query_finodb_sql(self, query: str) -> Dict[str, Any]:
-        """Query FinoDB in SQL, including across multiple datasets"""
-        url = f"{self.endpoint}/finodb/sql"
+    def query_dataset_in_sql(self, query: str) -> Dict[str, Any]:
+        """Query a dataset in SQL, including across multiple datasets"""
+        url = f"{self.endpoint}/sql"
         sql_request = {"query": query}
         json_body = json.dumps(sql_request)
         response = self.request("GET", url, None, json_body)
         return response
 
-    def query_finodb_promql(self, query: str, dataset: Optional[str] = None) -> Dict[str, Any]:
-        """Query a FinoDB dataset in PromQL"""
+    def query_dataset_in_promql(self, query: str, dataset: Optional[str] = None) -> Dict[str, Any]:
+        """Query a dataset in PromQL"""
         from urllib.parse import quote
-        url = f"{self.endpoint}/api/v1/query"
+        url = f"{self.endpoint}/promql/query"
 
         form_data = f"query={quote(query)}"
         if dataset:
@@ -626,10 +677,10 @@ class InfinoSDK:
         response = self.request("POST", url, headers, form_data)
         return response
 
-    def query_finodb_promql_range(self, query: str, start: int, end: int, step: int, dataset: Optional[str] = None) -> Dict[str, Any]:
-        """Query a FinoDB dataset in PromQL with time range"""
+    def query_dataset_in_promql_range(self, query: str, start: int, end: int, step: int, dataset: Optional[str] = None) -> Dict[str, Any]:
+        """Query a dataset in PromQL with time range"""
         from urllib.parse import quote
-        url = f"{self.endpoint}/api/v1/query_range"
+        url = f"{self.endpoint}/promql/query_range"
 
         form_data = f"query={quote(query)}&start={start}&end={end}&step={step}"
         if dataset:
@@ -639,15 +690,15 @@ class InfinoSDK:
         response = self.request("POST", url, headers, form_data)
         return response
 
-    # Correlate Operations - Upload to FinoDB
-    def upload_finodb_json(self, dataset: str, payload: str) -> Dict[str, Any]:
-        """Upload JSON records to FinoDB
+    # Correlate Operations - Upload to a dataset
+    def upload_json_to_dataset(self, dataset: str, payload: str) -> Dict[str, Any]:
+        """Upload JSON records to a dataset
         
         Args:
             dataset: Dataset name
             payload: NDJSON formatted bulk operations
         """
-        url = f"{self.endpoint}/finodb/{dataset}/json"
+        url = f"{self.endpoint}/{dataset}/json"
         if not payload.endswith('\n'):
             payload += '\n'
         response = self.request(
@@ -658,25 +709,31 @@ class InfinoSDK:
         )
         return response
 
-    def upsert_finodb(self, query: str) -> Dict[str, Any]:
-        """Upload SQL rows to FinoDB (upsert operations only)"""
-        url = f"{self.endpoint}/finodb/sql"
+    def upsert_to_dataset(self, query: str) -> Dict[str, Any]:
+        """Upload SQL rows to a dataset (upsert_to_dataset operations only)"""
+        url = f"{self.endpoint}/sql"
         sql_request = {"query": query}
         json_body = json.dumps(sql_request)
         response = self.request("POST", url, None, json_body)
         return response
 
-    def upload_finodb_metrics(self, dataset: str, payload: str) -> Dict[str, Any]:
-        """Upload Prometheus metrics to FinoDB"""
-        url = f"{self.endpoint}/finodb/{dataset}/metrics"
+    def upload_metrics_to_dataset(self, dataset: str, payload: str) -> Dict[str, Any]:
+        """Upload Prometheus metrics to a dataset"""
+        url = f"{self.endpoint}/{dataset}/metrics"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         response = self.request("POST", url, headers, payload)
         return response
 
-    def delete_finodb_records(self, dataset: str, query: str) -> Dict[str, Any]:
-        """Delete records from a FinoDB dataset"""
-        url = f"{self.endpoint}/finodb/{dataset}"
+    def delete_records(self, dataset: str, query: str) -> Dict[str, Any]:
+        """Delete records from a dataset"""
+        url = f"{self.endpoint}/{dataset}"
         response = self.request("PATCH", url, None, query)
+        return response
+
+    def enrich_dataset(self, dataset: str, policy: str) -> Dict[str, Any]:
+        """Update enrichment policy for a dataset"""
+        url = f"{self.endpoint}/{dataset}/enrich_dataset"
+        response = self.request("POST", url, None, policy)
         return response
 
     @classmethod
@@ -750,30 +807,30 @@ class InfinoSDK:
         return response
 
     # Correlate Operations - Import Jobs
-    def create_finodb_import_job(self, source_type: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create import job from data source to FinoDB"""
-        url = f"{self.endpoint}/finodb/import/{source_type}"
+    def create_import_job(self, source_type: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Create import job from data source to a dataset"""
+        url = f"{self.endpoint}/import/{source_type}"
         response = self.request("PUT", url, None, json.dumps(config))
         return response
 
-    def get_finodb_import_jobs(self) -> List[Dict[str, Any]]:
-        """Get FinoDB import job status"""
-        url = f"{self.endpoint}/finodb/import/jobs"
+    def get_import_jobs(self) -> List[Dict[str, Any]]:
+        """Get a dataset import job status"""
+        url = f"{self.endpoint}/import/jobs"
         response = self.request("GET", url)
         if isinstance(response, list):
             return response
         raise InfinoError(InfinoError.Type.INVALID_REQUEST, "Expected list of jobs")
 
-    def delete_finodb_import_job(self, job_id: str) -> Dict[str, Any]:
-        """Delete a FinoDB import job"""
-        url = f"{self.endpoint}/finodb/import/jobs/{job_id}"
+    def delete_import_job(self, job_id: str) -> Dict[str, Any]:
+        """Delete a import job"""
+        url = f"{self.endpoint}/import/jobs/{job_id}"
         response = self.request("DELETE", url)
         return response
 
     # Governance Operations
     def create_user(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Create a user in your account"""
-        url = f"{self.endpoint}/user"
+        url = f"{self.endpoint}/user/{name}"
         # YAML only for users when config is a string; otherwise JSON
         if isinstance(config, str):
             try:
@@ -790,13 +847,13 @@ class InfinoSDK:
 
     def get_user(self, name: str) -> Dict[str, Any]:
         """Get details for a user in your account"""
-        url = f"{self.endpoint}/user"
+        url = f"{self.endpoint}/user/{name}"
         response = self.request("GET", url)
         return response
 
     def update_user(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Update a user in your account"""
-        url = f"{self.endpoint}/user"
+        url = f"{self.endpoint}/user/{name}"
         if isinstance(config, str):
             try:
                 yaml.safe_load(config)
@@ -812,7 +869,7 @@ class InfinoSDK:
 
     def delete_user(self, name: str) -> Dict[str, Any]:
         """Delete a user in your account"""
-        url = f"{self.endpoint}/user"
+        url = f"{self.endpoint}/user/{name}"
         response = self.request("DELETE", url)
         return response
 
@@ -824,7 +881,7 @@ class InfinoSDK:
 
     def create_role(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Create a role in your account"""
-        url = f"{self.endpoint}/role"
+        url = f"{self.endpoint}/role/{name}"
         if isinstance(config, str):
             try:
                 yaml.safe_load(config)
@@ -840,13 +897,13 @@ class InfinoSDK:
 
     def get_role(self, name: str) -> Dict[str, Any]:
         """Get details for a role in your account"""
-        url = f"{self.endpoint}/role"
+        url = f"{self.endpoint}/role/{name}"
         response = self.request("GET", url)
         return response
 
     def update_role(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Update a role in your account"""
-        url = f"{self.endpoint}/role"
+        url = f"{self.endpoint}/role/{name}"
         if isinstance(config, str):
             try:
                 yaml.safe_load(config)
@@ -862,7 +919,7 @@ class InfinoSDK:
 
     def delete_role(self, name: str) -> Dict[str, Any]:
         """Delete a role in your account"""
-        url = f"{self.endpoint}/role"
+        url = f"{self.endpoint}/role/{name}"
         response = self.request("DELETE", url)
         return response
 
@@ -923,7 +980,7 @@ if __name__ == "__main__":
             """Test request signing"""
             responses.add(
                 responses.GET,
-                "http://localhost:8000/test_index/_search",
+                "http://localhost:8000/test_dataset/querydsl",
                 json={"hits": []},
                 status=200,
                 match=[
@@ -936,7 +993,7 @@ if __name__ == "__main__":
             )
 
             query = json.dumps({"query": {"match_all": {}}})
-            response = self.client.search("test_index", query)
+            response = self.client.query_dataset_in_querydsl("test_dataset", query)
             self.assertEqual(response, {"hits": []})
 
         @responses.activate
@@ -946,7 +1003,7 @@ if __name__ == "__main__":
             
             responses.add(
                 responses.PUT,
-                "http://localhost:8000/test_index/doc/1",
+                "http://localhost:8000/test_dataset/doc/1",
                 json={"result": "created"},
                 status=200,
                 match=[
@@ -958,7 +1015,7 @@ if __name__ == "__main__":
                 ]
             )
 
-            # Note: index_document doesn't exist in Rust SDK, using bulk_ingest instead
+            # Note: dataset_record doesn't exist in Rust SDK, using bulk_ingest instead
             # This matches what the Rust tests would do
             pass
 
@@ -968,7 +1025,7 @@ if __name__ == "__main__":
             # Test role creation with new YAML format
             responses.add(
                 responses.PUT,
-                "http://localhost:8000/_plugins/_security/api/roles/test_role",
+                "http://localhost:8000/role/test_role",
                 json={"status": "OK", "message": "'test_role' created."},
                 status=200,
                 match=[
@@ -993,13 +1050,13 @@ Permissions:
     Resources: ["test*"]
 """
 
-            response = self.client.create_role("test_role", role_config)
+            response = self.client.create_role_in_account("test_role", role_config)
             self.assertEqual(response["status"], "OK")
 
             # Test user creation with role assignment
             responses.add(
                 responses.PUT,
-                "http://localhost:8000/_plugins/_security/api/internalusers/test_user",
+                "http://localhost:8000/user/test_user",
                 json={"status": "OK", "message": "'test_user' created."},
                 status=200,
                 match=[

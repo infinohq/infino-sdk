@@ -135,10 +135,10 @@ pytest
 pytest --cov=infino_sdk --cov-report=html
 
 # Run specific test file
-pytest tests/test_search.py
+pytest tests/test_query.py
 
 # Run specific test
-pytest tests/test_search.py::test_basic_search
+pytest tests/test_query.py::test_basic_query
 
 # Run with verbose output
 pytest -v
@@ -159,19 +159,19 @@ from infino_sdk import InfinoSDK, InfinoError
 
 
 @pytest.mark.asyncio
-async def test_search_basic(mock_sdk):
+async def test_query_basic(mock_sdk):
     """Test basic search functionality"""
     sdk = await mock_sdk
     
-    result = await sdk.search("test_index", '{"query": {"match_all": {}}}')
+    result = await sdk.search("test_dataset", '{"query": {"match_all": {}}}')
     
     assert "hits" in result
     assert isinstance(result["hits"], dict)
 
 
 @pytest.mark.asyncio
-async def test_search_not_found(mock_sdk):
-    """Test search with non-existent index"""
+async def test_query_not_found(mock_sdk):
+    """Test search with non-existent dataset"""
     sdk = await mock_sdk
     
     with pytest.raises(InfinoError) as exc_info:

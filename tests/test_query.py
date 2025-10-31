@@ -15,7 +15,7 @@ def test_query_querydsl_success(sdk_with_mock_session, mock_response, sample_sea
     response = mock_response(200, sample_search_response)
     sdk.session.request.return_value = response
     
-    result = sdk.query_finodb_querydsl("test_dataset", '{"query": {"match_all": {}}}')
+    result = sdk.query_dataset_in_querydsl("test_dataset", '{"query": {"match_all": {}}}')
     
     assert "hits" in result
     assert result["hits"]["total"]["value"] == 100

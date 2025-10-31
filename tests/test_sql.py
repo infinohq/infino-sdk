@@ -45,7 +45,7 @@ class TestBasicSQLQueries:
         
         # Execute query
         query = "SELECT user_id, action, timestamp FROM logs.doc LIMIT 10"
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         # Verify
         assert result["total"] == 2
@@ -67,7 +67,7 @@ class TestBasicSQLQueries:
         sdk._session.post.return_value = mock_response
         
         query = "SELECT user_id FROM logs.doc WHERE action = 'login'"
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert result["total"] == 1
         assert result["rows"][0][0] == "user_123"
@@ -86,7 +86,7 @@ class TestBasicSQLQueries:
         sdk._session.post.return_value = mock_response
         
         query = "SELECT COUNT(*) as count FROM logs.doc"
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert result["rows"][0][0] == 1500
     
@@ -104,7 +104,7 @@ class TestBasicSQLQueries:
         sdk._session.post.return_value = mock_response
         
         query = "SELECT status FROM logs.doc LIMIT 1"
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert result["rows"][0][0] == "success"
 
@@ -137,7 +137,7 @@ class TestSQLAggregations:
             FROM logs.doc 
             GROUP BY status
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert len(result["rows"]) == 3
         assert result["rows"][0] == ["success", 1200]
@@ -168,7 +168,7 @@ class TestSQLAggregations:
             GROUP BY user_id 
             HAVING COUNT(*) > 100
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert len(result["rows"]) == 2
         assert all(row[1] > 100 for row in result["rows"])
@@ -199,7 +199,7 @@ class TestSQLAggregations:
                 COUNT(*) as total_count
             FROM logs.doc
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert result["rows"][0][0] == 245.5  # avg
         assert result["rows"][0][1] == 1000   # max
@@ -239,7 +239,7 @@ class TestSQLTimeSeriesQueries:
             GROUP BY time_bucket
             ORDER BY time_bucket
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert len(result["rows"]) == 3
         assert result["rows"][0][1] == 100
@@ -264,7 +264,7 @@ class TestSQLTimeSeriesQueries:
             WHERE timestamp BETWEEN '2024-01-15T00:00:00Z' 
                               AND '2024-01-15T23:59:59Z'
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert result["rows"][0][0] == 250
     
@@ -306,7 +306,7 @@ class TestSQLTimeSeriesQueries:
             )
             ORDER BY time_bucket
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert len(result["rows"]) == 3
         assert result["rows"][0][2] == 100.0  # First moving avg
@@ -340,7 +340,7 @@ class TestSQLJoins:
             FROM users.doc u
             INNER JOIN logs.doc l ON u.user_id = l.user_id
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert len(result["rows"]) == 2
         assert result["rows"][0] == ["user_123", "Alice", "login"]
@@ -370,7 +370,7 @@ class TestSQLJoins:
             FROM users.doc u
             LEFT JOIN logs.doc l ON u.user_id = l.user_id AND l.action = 'login'
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert len(result["rows"]) == 2
         assert result["rows"][1][2] is None  # Charlie has no login
@@ -408,7 +408,7 @@ class TestSQLSubqueries:
             )
             GROUP BY user_id
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert len(result["rows"]) == 2
         assert result["rows"][0][1] == 250
@@ -447,7 +447,7 @@ class TestSQLSubqueries:
             FROM error_counts
             WHERE errors > 0
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert len(result["rows"]) == 2
         assert result["rows"][0][1] == 0.05
@@ -490,7 +490,7 @@ class TestSQLCaseStatements:
             FROM logs.doc
             GROUP BY status_code, category
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert len(result["rows"]) == 3
         assert result["rows"][0][1] == "Success"
@@ -517,7 +517,7 @@ class TestSQLCaseStatements:
                 SUM(CASE WHEN status_code >= '400' THEN 1 ELSE 0 END) as error_count
             FROM logs.doc
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert result["rows"][0][0] == 1500
         assert result["rows"][0][1] == 60
@@ -556,7 +556,7 @@ class TestSQLErrorHandling:
         query = "SELECT * FROM nonexistent_dataset.doc"
         
         with pytest.raises(InfinoError) as exc_info:
-            sdk.query_finodb_sql(query)
+            sdk.query_dataset_in_sql(query)
         
         assert exc_info.value.status_code() == 404
     
@@ -574,7 +574,7 @@ class TestSQLErrorHandling:
         sdk._session.post.return_value = mock_response
         
         query = "SELECT user_id FROM logs.doc WHERE user_id = 'nonexistent'"
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert result["total"] == 0
         assert len(result["rows"]) == 0
@@ -611,7 +611,7 @@ class TestSQLWindowFunctions:
                 ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY timestamp) as row_num
             FROM logs.doc
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert len(result["rows"]) == 3
         assert result["rows"][0][2] == 1
@@ -645,7 +645,7 @@ class TestSQLWindowFunctions:
                 RANK() OVER (ORDER BY score DESC) as rank
             FROM user_scores.doc
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert len(result["rows"]) == 3
         assert result["rows"][0][2] == 1  # Highest score gets rank 1
@@ -668,7 +668,7 @@ class TestSQLIndexTypes:
         sdk._session.post.return_value = mock_response
         
         query = "SELECT title FROM documents.doc LIMIT 1"
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert result["rows"][0][0] == "Test Document"
     
@@ -696,7 +696,7 @@ class TestSQLIndexTypes:
             FROM metrics.aly
             GROUP BY metric_name
         """
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert len(result["rows"]) == 2
         assert result["rows"][0][1] == 45.5
@@ -715,6 +715,6 @@ class TestSQLIndexTypes:
         sdk._session.post.return_value = mock_response
         
         query = "SELECT DISTINCT tag FROM tags.kwd"
-        result = sdk.query_finodb_sql(query)
+        result = sdk.query_dataset_in_sql(query)
         
         assert len(result["rows"]) == 2

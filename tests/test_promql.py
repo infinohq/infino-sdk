@@ -45,7 +45,7 @@ class TestPromQLInstantQueries:
         sdk._session.request.return_value = mock_response
         
         # Execute query
-        result = sdk.query_finodb_promql('cpu_usage{host="server1"}', "test_dataset.aly")
+        result = sdk.query_dataset_in_promql('cpu_usage{host="server1"}', "test_dataset.aly")
         
         # Verify
         assert result["status"] == "success"
@@ -146,7 +146,7 @@ class TestPromQLRangeQueries:
         end_time = now + 120000
         step = 60
         
-        result = sdk.query_finodb_promql_range(
+        result = sdk.query_dataset_in_promql_range(
             'cpu_usage{host="server1"}',
             start_time,
             end_time,
@@ -432,7 +432,7 @@ class TestPromQLErrorHandling:
         
         # Execute query and expect error
         with pytest.raises(Exception):
-            sdk.query_finodb_promql("cpu_usage{", "test_dataset.aly")
+            sdk.query_dataset_in_promql("cpu_usage{", "test_dataset.aly")
             
     def test_query_timeout(self, mock_sdk):
         """Test handling of query timeout"""
@@ -451,7 +451,7 @@ class TestPromQLErrorHandling:
         
         # Execute query and expect error
         with pytest.raises(Exception):
-            sdk.query_finodb_promql("rate(cpu_usage[1h])", "test_dataset.aly")
+            sdk.query_dataset_in_promql("rate(cpu_usage[1h])", "test_dataset.aly")
             
     def test_dataset_not_found(self, mock_sdk):
         """Test handling of non-existent dataset"""
@@ -468,4 +468,4 @@ class TestPromQLErrorHandling:
         
         # Execute query and expect error
         with pytest.raises(Exception):
-            sdk.query_finodb_promql("cpu_usage", "nonexistent.aly")
+            sdk.query_dataset_in_promql("cpu_usage", "nonexistent.aly")
