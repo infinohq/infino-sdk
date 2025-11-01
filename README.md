@@ -274,7 +274,7 @@ sdk.upload_json_to_dataset("sales-correlation", bulk_data)
 metadata = sdk.get_dataset_metadata("sales-correlation")
 
 # List all datasets
-datasets = sdk.get_all_datasets()
+datasets = sdk.get_datasets()
 
 # Delete dataset
 sdk.delete_dataset("old-staging-2023")

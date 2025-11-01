@@ -582,7 +582,7 @@ class InfinoSDK:
         response = self.request("HEAD", url)
         return response
 
-    def get_all_datasets(self) -> List[Dict[str, Any]]:
+    def get_datasets(self) -> List[Dict[str, Any]]:
         """Query Infino for all metadata on current datasets"""
         url = f"{self.endpoint}/metadata"
         response = self.request("GET", url)

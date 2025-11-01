@@ -200,7 +200,7 @@ def context_manager_error_handling():
         )
         # Multiple operations
         sdk.ping()
-        sdk.get_all_datasets()
+        sdk.get_datasets()
         print("✅ All operations completed")
     except InfinoError as e:
         print(f"❌ Operation failed: {e.message}")

@@ -68,7 +68,7 @@ def test_get_dataset_metadata(sdk_with_mock_session, mock_response):
 
 
 @pytest.mark.unit
-def test_get_all_datasets(sdk_with_mock_session, mock_response):
+def test_get_datasets(sdk_with_mock_session, mock_response):
     """Test listing all datasets"""
     sdk = sdk_with_mock_session
     
@@ -79,7 +79,7 @@ def test_get_all_datasets(sdk_with_mock_session, mock_response):
     response = mock_response(200, datasets_response)
     sdk.session.request.return_value = response
     
-    result = sdk.get_all_datasets()
+    result = sdk.get_datasets()
     
     assert isinstance(result, list)
     assert len(result) == 2
