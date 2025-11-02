@@ -223,15 +223,19 @@ results = sdk.query_source(
 ### PromQL (Time-Series)
 
 ```python
-# Instant query
-result = sdk.query_dataset_in_promql('http_requests_total{status="200"}')
+# Instant PromQL query
+result = sdk.query_dataset_in_promql(
+    'http_requests_total{status="200"}',
+    dataset="metrics_example",
+)
 
-# Range query
+# Range PromQL query
 result = sdk.query_dataset_in_promql_range(
     query='rate(http_requests_total[5m])',
     start=1609459200,
     end=1609545600,
-    step=300
+    step=300,
+    dataset="metrics_example",
 )
 ```
 
@@ -405,7 +409,7 @@ Permissions use universal terminology that works across SQL, NoSQL, logs, and me
 | ResourceType | Actions | What It Controls |
 |--------------|---------|------------------|
 | `metadata` | `read` | View schemas, mappings, list datasets |
-| `collection` | `create`, `delete` | Create/delete datasets |
+| `dataset` | `create`, `delete` | Create/delete datasets |
 | `record` | `read`, `write` | Query/insert/update/delete records |
 | `field` | N/A | Controlled via `Fields` in record permissions |
 
@@ -476,7 +480,7 @@ Complete working examples organized by workflow:
 - [**fino_nl.py**](examples/fino_nl.py) - Natural language with Fino AI
 - [**promql_metrics.py**](examples/promql_metrics.py) - PromQL time-series queries
 
-### Analyze Examples
+### Correlate Examples
 - [**upload_json.py**](examples/upload_json.py) - Pull data together for cross-source analysis
 
 ### Govern Examples

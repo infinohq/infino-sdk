@@ -573,8 +573,13 @@ class InfinoSDK:
     def get_dataset_metadata(self, dataset: str) -> Dict[str, Any]:
         """Query a dataset for its metadata"""
         url = f"{self.endpoint}/{dataset}/metadata"
-        response = self.request("HEAD", url)
-        return response
+        response = self.request("GET", url)
+
+        if isinstance(response, dict):
+            return response
+        if isinstance(response, str):
+            return {"text": response}
+        raise InfinoError(InfinoError.Type.INVALID_REQUEST, "Unexpected response from dataset metadata")
 
     def get_dataset_schema(self, dataset: str) -> Dict[str, Any]:
         """Query a dataset for its schema"""
@@ -803,7 +808,7 @@ class InfinoSDK:
     def get_source_metadata(self, connection_id: str, dataset: str) -> Dict[str, Any]:
         """Get metadata from a data source connection"""
         url = f"{self.endpoint}/source/{connection_id}/{dataset}/metadata"
-        response = self.request("HEAD", url)
+        response = self.request("GET", url)
         return response
 
     # Correlate Operations - Import Jobs
@@ -935,13 +940,16 @@ class InfinoSDK:
         response = self.request("GET", url)
         return response
 
-    def rotate_keys(self) -> Dict[str, Any]:
-        """Rotate API keys for current user
+    def rotate_keys(self, username: str) -> Dict[str, Any]:
+        """Rotate API keys for a user
+
+        Args:
+            username: Username whose keys to rotate
 
         Returns:
             New credentials (access_key and secret_key)
         """
-        url = f"{self.endpoint}/keys"
+        url = f"{self.endpoint}/user/{username}/keys"
         response = self.request("PATCH", url)
         return response
 
@@ -1045,7 +1053,7 @@ Permissions:
     Actions: [read, write]
     Resources: ["test*"]
   
-  - ResourceType: collection
+  - ResourceType: dataset
     Actions: [create, delete]
     Resources: ["test*"]
 """
