@@ -108,8 +108,6 @@ results = sdk.query_source(
 )
 ```
 
-**No ETL**: Data stays in your sources. Infino queries it where it lives.
-
 ## Query – Ask Questions
 
 Query any connected source or dataset with multiple interfaces.
