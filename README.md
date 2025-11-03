@@ -3,9 +3,9 @@
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Official Python SDK for [Infino](https://infino.ai) - the unification layer for your data stack.
+Official Python SDK for [Infino](https://infino.ai) - the analytics gateway for your data stack.
 
-**Infino** provides a single gateway to your data stack. Query Elasticsearch, OpenSearch, Snowflake, and 50+ sources in natural language, SQL, QueryDSL, or PromQL. Bring diverse data sources together for deeper analysis—no ETL required. Control access via fine-grained RBAC. All through one unified API. 
+**Infino** provides an intelligent unification layer for your data stack. Query Elasticsearch, OpenSearch, Snowflake, and 50+ sources in natural language, SQL, QueryDSL, or PromQL. Bring diverse data sources together for deeper analysis—no ETL required. Control access via fine-grained RBAC. All through one unified API. 
 
 **Built for**:
 - **Connect**: Access 50+ data sources without data movement
