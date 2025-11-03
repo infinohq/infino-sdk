@@ -101,8 +101,10 @@ results = sdk.query_source(
 )
 
 # Query Snowflake (via SQL)
-results = sdk.query_dataset_in_sql(
-    "SELECT * FROM sales_data WHERE region='US' LIMIT 10"
+results = sdk.query_source(
+    connection_id="conn_snowflake_prod",
+    dataset="sales_data",
+    query="SELECT * FROM sales_data WHERE region='US' LIMIT 10"
 )
 ```
 
