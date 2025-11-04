@@ -23,7 +23,7 @@ export INFINO_ENDPOINT="https://api.infino.ai"
 **Basic search operations and queries**
 
 Learn how to:
-- Create indices
+- Create datasets
 - Execute different types of queries (match_all, term, range, bool)
 - Count documents
 - Use aggregations
