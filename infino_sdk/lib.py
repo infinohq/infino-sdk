@@ -878,7 +878,7 @@ class InfinoSDK:
         response = self.request("DELETE", url)
         return response
 
-    def list_users(self, name: str) -> Dict[str, Any]:
+    def list_users(self) -> Dict[str, Any]:
         """List the users in your account"""
         url = f"{self.endpoint}/users"
         response = self.request("GET", url)
