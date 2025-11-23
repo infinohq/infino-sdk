@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "infino-sdk"
+version = "0.3.0"
+description = "Python SDK for Infino API with AWS SigV4 authentication"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "Infino AI, Inc.", email = "support@infino.ai" }]
+maintainers = [{ name = "Infino AI, Inc.", email = "support@infino.ai" }]
+keywords = [
+    "infino",
+    "search",
+    "analytics",
+    "opensearch",
+    "sdk",
+    "sigv4",
+    "ai",
+    "nlp",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+requires-python = ">=3.7"
+dependencies = [
+    "requests>=2.25.0",
+    "backoff>=2.0.0",
+    "websockets>=10.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "responses>=0.23.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+    "pylint>=2.17.0",
+    "pytest-cov>=4.0.0",
+    "build>=0.10.0",
+    "twine>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://infino.ai"
+
+[tool.setuptools]
+packages = ["infino_sdk"]
+
+[tool.setuptools.package-data]
+infino_sdk = ["py.typed"]
