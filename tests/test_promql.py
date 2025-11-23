@@ -11,15 +11,6 @@ from unittest.mock import Mock, patch, MagicMock
 from infino_sdk import InfinoSDK, InfinoError
 
 
-@pytest.fixture
-def mock_sdk():
-    """Create a mock SDK instance"""
-    with patch('infino_sdk.lib.requests') as mock_requests:
-        sdk = InfinoSDK("test_access", "test_secret", "https://test.infino.ws")
-        sdk._session = MagicMock()
-        yield sdk, mock_requests
-
-
 class TestPromQLInstantQueries:
     """Test PromQL instant queries"""
     
@@ -30,7 +21,7 @@ class TestPromQLInstantQueries:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -41,8 +32,8 @@ class TestPromQLInstantQueries:
                     }
                 ]
             }
-        }
-        sdk._session.request.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query
         result = sdk.query_dataset_in_promql('cpu_usage{host="server1"}', "test_dataset.aly")
@@ -59,7 +50,7 @@ class TestPromQLInstantQueries:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -70,11 +61,11 @@ class TestPromQLInstantQueries:
                     }
                 ]
             }
-        }
-        sdk._session.request.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query
-        result = sdk.prom_ql_query("avg(cpu_usage)", "test_index.aly")
+        result = sdk.query_dataset_in_promql("avg(cpu_usage)", "test_index.aly")
         
         # Verify
         assert result["status"] == "success"
@@ -87,7 +78,7 @@ class TestPromQLInstantQueries:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -102,11 +93,11 @@ class TestPromQLInstantQueries:
                     }
                 ]
             }
-        }
-        sdk._session.request.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query
-        result = sdk.prom_ql_query("avg(cpu_usage) by (host)", "test_index.aly")
+        result = sdk.query_dataset_in_promql("avg(cpu_usage) by (host)", "test_index.aly")
         
         # Verify
         assert result["status"] == "success"
@@ -124,7 +115,7 @@ class TestPromQLRangeQueries:
         now = int(time.time() * 1000)
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "status": "success",
             "data": {
                 "resultType": "matrix",
@@ -138,8 +129,8 @@ class TestPromQLRangeQueries:
                     }
                 ]
             }
-        }
-        sdk._session.request.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query
         start_time = now - 60000
@@ -168,7 +159,7 @@ class TestPromQLRangeQueries:
         now = int(time.time() * 1000)
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "status": "success",
             "data": {
                 "resultType": "matrix",
@@ -182,15 +173,15 @@ class TestPromQLRangeQueries:
                     }
                 ]
             }
-        }
-        sdk._session.request.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query
         start_time = now - 60000
         end_time = now + 300000
         step = 60
         
-        result = sdk.prom_ql_query_range(
+        result = sdk.query_dataset_in_promql_range(
             "rate(cpu_usage[5m])",
             start_time,
             end_time,
@@ -210,7 +201,7 @@ class TestPromQLRangeQueries:
         now = int(time.time() * 1000)
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "status": "success",
             "data": {
                 "resultType": "matrix",
@@ -231,15 +222,15 @@ class TestPromQLRangeQueries:
                     }
                 ]
             }
-        }
-        sdk._session.request.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query
         start_time = now - 60000
         end_time = now + 120000
         step = 60
         
-        result = sdk.prom_ql_query_range(
+        result = sdk.query_dataset_in_promql_range(
             "avg(cpu_usage) by (host)",
             start_time,
             end_time,
@@ -263,7 +254,7 @@ class TestPromQLLabelSelectors:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -274,11 +265,11 @@ class TestPromQLLabelSelectors:
                     }
                 ]
             }
-        }
-        sdk._session.request.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query
-        result = sdk.prom_ql_query('cpu_usage{env="production"}', "test_index.aly")
+        result = sdk.query_dataset_in_promql('cpu_usage{env="production"}', "test_index.aly")
         
         # Verify
         assert result["status"] == "success"
@@ -291,7 +282,7 @@ class TestPromQLLabelSelectors:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -306,11 +297,11 @@ class TestPromQLLabelSelectors:
                     }
                 ]
             }
-        }
-        sdk._session.request.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query
-        result = sdk.prom_ql_query('cpu_usage{region=~"us-.*"}', "test_index.aly")
+        result = sdk.query_dataset_in_promql('cpu_usage{region=~"us-.*"}', "test_index.aly")
         
         # Verify
         assert result["status"] == "success"
@@ -323,7 +314,7 @@ class TestPromQLLabelSelectors:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -338,11 +329,11 @@ class TestPromQLLabelSelectors:
                     }
                 ]
             }
-        }
-        sdk._session.request.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query
-        result = sdk.prom_ql_query(
+        result = sdk.query_dataset_in_promql(
             'cpu_usage{env="production",region="us-east"}',
             "test_index.aly"
         )
@@ -363,7 +354,7 @@ class TestPromQLArithmeticOperations:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -374,11 +365,11 @@ class TestPromQLArithmeticOperations:
                     }
                 ]
             }
-        }
-        sdk._session.request.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query
-        result = sdk.prom_ql_query('cpu_usage{host="server1"} * 2', "test_index.aly")
+        result = sdk.query_dataset_in_promql('cpu_usage{host="server1"} * 2', "test_index.aly")
         
         # Verify
         assert result["status"] == "success"
@@ -391,7 +382,7 @@ class TestPromQLArithmeticOperations:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -402,11 +393,11 @@ class TestPromQLArithmeticOperations:
                     }
                 ]
             }
-        }
-        sdk._session.request.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query
-        result = sdk.prom_ql_query('cpu_usage + memory_usage', "test_index.aly")
+        result = sdk.query_dataset_in_promql('cpu_usage + memory_usage', "test_index.aly")
         
         # Verify
         assert result["status"] == "success"
@@ -422,13 +413,13 @@ class TestPromQLErrorHandling:
         # Mock error response
         mock_response = Mock()
         mock_response.status_code = 400
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "status": "error",
             "errorType": "bad_data",
             "error": "parse error: unexpected end of input"
-        }
+        })
         mock_response.raise_for_status.side_effect = Exception("Bad Request")
-        sdk._session.request.return_value = mock_response
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query and expect error
         with pytest.raises(Exception):
@@ -441,13 +432,13 @@ class TestPromQLErrorHandling:
         # Mock timeout response
         mock_response = Mock()
         mock_response.status_code = 504
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "status": "error",
             "errorType": "timeout",
             "error": "query timeout"
-        }
+        })
         mock_response.raise_for_status.side_effect = Exception("Gateway Timeout")
-        sdk._session.request.return_value = mock_response
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query and expect error
         with pytest.raises(Exception):
@@ -460,11 +451,11 @@ class TestPromQLErrorHandling:
         # Mock error response
         mock_response = Mock()
         mock_response.status_code = 404
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "error": "index_not_found_exception"
-        }
+        })
         mock_response.raise_for_status.side_effect = Exception("Not Found")
-        sdk._session.request.return_value = mock_response
+        sdk.session.request = Mock(return_value=mock_response)
         
         # Execute query and expect error
         with pytest.raises(Exception):

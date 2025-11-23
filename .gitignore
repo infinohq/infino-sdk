@@ -27,6 +27,13 @@ venv/
 ENV/
 env/
 
+# Testing / coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.pytest_cache/
+
 # IDE
 .vscode/
 .idea/

@@ -10,26 +10,17 @@ from unittest.mock import Mock, patch, MagicMock
 from infino_sdk import InfinoSDK, InfinoError
 
 
-@pytest.fixture
-def mock_sdk():
-    """Create a mock SDK instance"""
-    with patch('infino_sdk.lib.requests') as mock_requests:
-        sdk = InfinoSDK("test_access", "test_secret", "https://test.infino.ws")
-        sdk._session = MagicMock()
-        yield sdk, mock_requests
-
-
 class TestBasicSQLQueries:
     """Test basic SQL query operations"""
     
     def test_simple_select_query(self, mock_sdk):
         """Test simple SELECT query"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "action", "type": "keyword"},
@@ -40,18 +31,18 @@ class TestBasicSQLQueries:
                 ["user_456", "logout", "2024-01-15T11:00:00Z"]
             ],
             "total": 2
-        }
-        sdk._session.post.return_value = mock_response
-        
+        })
+        sdk.session.request = Mock(return_value=mock_response)
+
         # Execute query
         query = "SELECT user_id, action, timestamp FROM logs.doc LIMIT 10"
         result = sdk.query_dataset_in_sql(query)
-        
+
         # Verify
         assert result["total"] == 2
         assert len(result["rows"]) == 2
         assert len(result["columns"]) == 3
-        sdk._session.post.assert_called_once()
+        sdk.session.request.assert_called_once()
     
     def test_select_with_where_clause(self, mock_sdk):
         """Test SELECT with WHERE clause"""
@@ -59,12 +50,12 @@ class TestBasicSQLQueries:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [{"name": "user_id", "type": "keyword"}],
             "rows": [["user_123"]],
             "total": 1
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = "SELECT user_id FROM logs.doc WHERE action = 'login'"
         result = sdk.query_dataset_in_sql(query)
@@ -78,12 +69,12 @@ class TestBasicSQLQueries:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [{"name": "count", "type": "long"}],
             "rows": [[1500]],
             "total": 1
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = "SELECT COUNT(*) as count FROM logs.doc"
         result = sdk.query_dataset_in_sql(query)
@@ -96,12 +87,12 @@ class TestBasicSQLQueries:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [{"name": "status", "type": "keyword"}],
             "rows": [["success"]],
             "total": 1
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = "SELECT status FROM logs.doc LIMIT 1"
         result = sdk.query_dataset_in_sql(query)
@@ -118,7 +109,7 @@ class TestSQLAggregations:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "status", "type": "keyword"},
                 {"name": "count", "type": "long"}
@@ -129,8 +120,8 @@ class TestSQLAggregations:
                 ["warning", 100]
             ],
             "total": 3
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT status, COUNT(*) as count 
@@ -149,7 +140,7 @@ class TestSQLAggregations:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "count", "type": "long"}
@@ -159,8 +150,8 @@ class TestSQLAggregations:
                 ["user_456", 200]
             ],
             "total": 2
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT user_id, COUNT(*) as count 
@@ -179,7 +170,7 @@ class TestSQLAggregations:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "avg_duration", "type": "double"},
                 {"name": "max_duration", "type": "long"},
@@ -188,8 +179,8 @@ class TestSQLAggregations:
             ],
             "rows": [[245.5, 1000, 10, 500]],
             "total": 1
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT 
@@ -216,7 +207,7 @@ class TestSQLTimeSeriesQueries:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "time_bucket", "type": "date"},
                 {"name": "count", "type": "long"}
@@ -227,8 +218,8 @@ class TestSQLTimeSeriesQueries:
                 ["2024-01-15T02:00:00Z", 120]
             ],
             "total": 3
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT 
@@ -251,12 +242,12 @@ class TestSQLTimeSeriesQueries:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [{"name": "count", "type": "long"}],
             "rows": [[250]],
             "total": 1
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT COUNT(*) as count
@@ -274,7 +265,7 @@ class TestSQLTimeSeriesQueries:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "time_bucket", "type": "date"},
                 {"name": "value", "type": "double"},
@@ -286,8 +277,8 @@ class TestSQLTimeSeriesQueries:
                 ["2024-01-15T02:00:00Z", 120.0, 123.3]
             ],
             "total": 3
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT 
@@ -321,7 +312,7 @@ class TestSQLJoins:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "user_name", "type": "text"},
@@ -332,8 +323,8 @@ class TestSQLJoins:
                 ["user_456", "Bob", "logout"]
             ],
             "total": 2
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT u.user_id, u.name as user_name, l.action
@@ -351,7 +342,7 @@ class TestSQLJoins:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "user_name", "type": "text"},
@@ -362,8 +353,8 @@ class TestSQLJoins:
                 ["user_789", "Charlie", None]
             ],
             "total": 2
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT u.user_id, u.name as user_name, l.timestamp as last_login
@@ -385,7 +376,7 @@ class TestSQLSubqueries:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "total_actions", "type": "long"}
@@ -395,8 +386,8 @@ class TestSQLSubqueries:
                 ["user_456", 300]
             ],
             "total": 2
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT user_id, COUNT(*) as total_actions
@@ -419,7 +410,7 @@ class TestSQLSubqueries:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "error_rate", "type": "double"}
@@ -429,8 +420,8 @@ class TestSQLSubqueries:
                 ["user_456", 0.12]
             ],
             "total": 2
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             WITH error_counts AS (
@@ -462,7 +453,7 @@ class TestSQLCaseStatements:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "status_code", "type": "keyword"},
                 {"name": "category", "type": "keyword"},
@@ -474,8 +465,8 @@ class TestSQLCaseStatements:
                 ["500", "Server Error", 10]
             ],
             "total": 3
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT 
@@ -501,15 +492,15 @@ class TestSQLCaseStatements:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "success_count", "type": "long"},
                 {"name": "error_count", "type": "long"}
             ],
             "rows": [[1500, 60]],
             "total": 1
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT 
@@ -534,12 +525,12 @@ class TestSQLErrorHandling:
         mock_response.status_code = 400
         mock_response.text = "Syntax error in SQL query"
         mock_response.json.side_effect = ValueError("No JSON")
-        sdk._session.post.return_value = mock_response
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = "SELECT * FORM logs.doc"  # Typo: FORM instead of FROM
         
         with pytest.raises(InfinoError) as exc_info:
-            sdk.sql(query)
+            sdk.query_dataset_in_sql(query)
         
         assert exc_info.value.status_code() == 400
     
@@ -551,7 +542,7 @@ class TestSQLErrorHandling:
         mock_response.status_code = 404
         mock_response.text = "Dataset not found"
         mock_response.json.side_effect = ValueError("No JSON")
-        sdk._session.post.return_value = mock_response
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = "SELECT * FROM nonexistent_dataset.doc"
         
@@ -566,12 +557,12 @@ class TestSQLErrorHandling:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [{"name": "user_id", "type": "keyword"}],
             "rows": [],
             "total": 0
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = "SELECT user_id FROM logs.doc WHERE user_id = 'nonexistent'"
         result = sdk.query_dataset_in_sql(query)
@@ -589,7 +580,7 @@ class TestSQLWindowFunctions:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "timestamp", "type": "date"},
@@ -601,8 +592,8 @@ class TestSQLWindowFunctions:
                 ["user_456", "2024-01-15T10:30:00Z", 1]
             ],
             "total": 3
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT 
@@ -623,7 +614,7 @@ class TestSQLWindowFunctions:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "score", "type": "long"},
@@ -635,8 +626,8 @@ class TestSQLWindowFunctions:
                 ["user_789", 90, 3]
             ],
             "total": 3
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT 
@@ -660,12 +651,12 @@ class TestSQLIndexTypes:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [{"name": "title", "type": "text"}],
             "rows": [["Test Document"]],
             "total": 1
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = "SELECT title FROM documents.doc LIMIT 1"
         result = sdk.query_dataset_in_sql(query)
@@ -678,7 +669,7 @@ class TestSQLIndexTypes:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [
                 {"name": "metric_name", "type": "keyword"},
                 {"name": "avg_value", "type": "double"}
@@ -688,8 +679,8 @@ class TestSQLIndexTypes:
                 ["memory_usage", 62.3]
             ],
             "total": 2
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = """
             SELECT metric_name, AVG(value) as avg_value
@@ -707,12 +698,12 @@ class TestSQLIndexTypes:
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
+        mock_response.text = json.dumps({
             "columns": [{"name": "tag", "type": "keyword"}],
             "rows": [["important"], ["urgent"]],
             "total": 2
-        }
-        sdk._session.post.return_value = mock_response
+        })
+        sdk.session.request = Mock(return_value=mock_response)
         
         query = "SELECT DISTINCT tag FROM tags.kwd"
         result = sdk.query_dataset_in_sql(query)
