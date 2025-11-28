@@ -9,7 +9,8 @@ This example demonstrates:
 """
 
 import os
-from infino_sdk import InfinoSDK, InfinoError
+
+from infino_sdk import InfinoError, InfinoSDK
 
 
 def main():
@@ -50,7 +51,7 @@ def main():
 
     # Range query
     print("\n--- Range Query ---")
-    query = '''
+    query = """
     {
         "query": {
             "range": {
@@ -62,7 +63,7 @@ def main():
         },
         "sort": [{"price": "asc"}]
     }
-    '''
+    """
     results = sdk.query_dataset_in_querydsl(dataset_name, query)
     hits = results.get("hits", {}).get("hits", [])
     print(f"Found {len(hits)} products priced between $10-$100")
@@ -72,7 +73,7 @@ def main():
 
     # Bool query (combining multiple conditions)
     print("\n--- Bool Query (Multiple Conditions) ---")
-    query = '''
+    query = """
     {
         "query": {
             "bool": {
@@ -88,9 +89,11 @@ def main():
             }
         }
     }
-    '''
+    """
     results = sdk.query_dataset_in_querydsl(dataset_name, query)
-    print(f"Found {len(results.get('hits', {}).get('hits', []))} in-stock products under $50")
+    print(
+        f"Found {len(results.get('hits', {}).get('hits', []))} in-stock products under $50"
+    )
 
     # Count records
     print("\n--- Record Count ---")
@@ -99,7 +102,7 @@ def main():
 
     # Search with aggregations
     print("\n--- Search with Aggregations ---")
-    query = '''
+    query = """
     {
         "size": 0,
         "aggs": {
@@ -116,7 +119,7 @@ def main():
             }
         }
     }
-    '''
+    """
     results = sdk.query_dataset_in_querydsl(dataset_name, query)
     aggs = results.get("aggregations", {})
 

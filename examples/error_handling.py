@@ -9,14 +9,15 @@ This example demonstrates:
 """
 
 import os
-from infino_sdk import InfinoSDK, InfinoError, RetryConfig
+
+from infino_sdk import InfinoError, InfinoSDK, RetryConfig
 
 
 def handle_not_found_errors(sdk: InfinoSDK):
     """Example of handling 404 Not Found errors"""
     print("\n📍 Example 1: Handling Not Found Errors")
     print("-" * 50)
-    
+
     try:
         record = sdk.get_record("nonexistent_dataset", "missing_record")
         print(f"Record found: {record}")
@@ -33,7 +34,7 @@ def handle_auth_errors(sdk: InfinoSDK):
     """Example of handling authentication errors"""
     print("\n🔐 Example 2: Handling Authentication Errors")
     print("-" * 50)
-    
+
     try:
         # This will fail if credentials are invalid
         sdk.get_user_account_info()
@@ -57,12 +58,12 @@ def handle_network_errors():
     """Example of handling network errors"""
     print("\n🌐 Example 3: Handling Network Errors")
     print("-" * 50)
-    
+
     # Try to connect to invalid endpoint
     sdk = InfinoSDK(
         access_key="test",
         secret_key="test",
-        endpoint="http://invalid-endpoint-that-does-not-exist.com"
+        endpoint="http://invalid-endpoint-that-does-not-exist.com",
     )
     try:
         sdk.ping()
@@ -87,7 +88,7 @@ def handle_validation_errors(sdk: InfinoSDK):
     """Example of handling validation/bad request errors"""
     print("\n⚠️  Example 4: Handling Validation Errors")
     print("-" * 50)
-    
+
     try:
         # Invalid JSON query
         sdk.query_dataset_in_querydsl("my_dataset", "this is not valid JSON")
@@ -109,19 +110,19 @@ def retry_with_custom_config():
     """Example of custom retry configuration"""
     print("\n🔄 Example 5: Custom Retry Configuration")
     print("-" * 50)
-    
+
     # Create custom retry config
     retry_config = RetryConfig()
     retry_config.initial_interval = 500  # 500ms initial delay
-    retry_config.max_interval = 10000    # Max 10 seconds between retries
+    retry_config.max_interval = 10000  # Max 10 seconds between retries
     retry_config.max_elapsed_time = 60000  # Give up after 60 seconds
-    retry_config.max_retries = 5         # Try up to 5 times
-    
+    retry_config.max_retries = 5  # Try up to 5 times
+
     sdk = InfinoSDK(
         access_key=os.getenv("INFINO_ACCESS_KEY", "test"),
         secret_key=os.getenv("INFINO_SECRET_KEY", "test"),
         endpoint=os.getenv("INFINO_ENDPOINT", "https://api.infino.ai"),
-        retry_config=retry_config
+        retry_config=retry_config,
     )
     try:
         # This will automatically retry on server errors
@@ -136,22 +137,26 @@ def graceful_degradation(sdk: InfinoSDK):
     """Example of graceful degradation"""
     print("\n🛡️  Example 6: Graceful Degradation")
     print("-" * 50)
-    
+
     # Try primary dataset first, fallback to secondary
     primary_dataset = "products_v2"
     fallback_dataset = "products"
     query = '{"query": {"match_all": {}}, "size": 10}'
-    
+
     try:
         print(f"Trying primary dataset: {primary_dataset}")
         results = sdk.query_dataset_in_querydsl(primary_dataset, query)
-        print(f"✅ Retrieved {len(results.get('hits', {}).get('hits', []))} records from primary")
+        print(
+            f"✅ Retrieved {len(results.get('hits', {}).get('hits', []))} records from primary"
+        )
     except InfinoError as e:
         if e.status_code() == 404:
             print(f"⚠️  Primary dataset not found, trying fallback...")
             try:
                 results = sdk.query_dataset_in_querydsl(fallback_dataset, query)
-                print(f"✅ Retrieved {len(results.get('hits', {}).get('hits', []))} records from fallback")
+                print(
+                    f"✅ Retrieved {len(results.get('hits', {}).get('hits', []))} records from fallback"
+                )
             except InfinoError as fallback_error:
                 print(f"❌ Both datasets failed: {fallback_error.message}")
                 # Use default/cached data or return empty result
@@ -165,11 +170,11 @@ def batch_operations_with_error_handling(sdk: InfinoSDK):
     """Example of handling errors in batch operations"""
     print("\n📦 Example 7: Batch Operations with Error Handling")
     print("-" * 50)
-    
+
     datasets_to_check = ["dataset1", "dataset2", "dataset3", "nonexistent"]
     successful = []
     failed = []
-    
+
     for dataset_name in datasets_to_check:
         try:
             metadata = sdk.get_dataset_metadata(dataset_name)
@@ -181,7 +186,7 @@ def batch_operations_with_error_handling(sdk: InfinoSDK):
                 print(f"  ⚠️  {dataset_name}: Not Found")
             else:
                 print(f"  ❌ {dataset_name}: {e.message}")
-    
+
     print(f"\nSummary:")
     print(f"  Successful: {len(successful)}")
     print(f"  Failed: {len(failed)}")
@@ -191,12 +196,12 @@ def context_manager_error_handling():
     """Example of error handling with context managers"""
     print("\n🎯 Example 8: Context Manager Error Handling")
     print("-" * 50)
-    
+
     try:
         sdk = InfinoSDK(
             access_key=os.getenv("INFINO_ACCESS_KEY", "test"),
             secret_key=os.getenv("INFINO_SECRET_KEY", "test"),
-            endpoint=os.getenv("INFINO_ENDPOINT", "https://api.infino.ai")
+            endpoint=os.getenv("INFINO_ENDPOINT", "https://api.infino.ai"),
         )
         # Multiple operations
         sdk.ping()
@@ -210,11 +215,11 @@ def main():
     print("=" * 50)
     print("Infino SDK Error Handling Examples")
     print("=" * 50)
-    
+
     access_key = os.getenv("INFINO_ACCESS_KEY", "your_access_key")
     secret_key = os.getenv("INFINO_SECRET_KEY", "your_secret_key")
     endpoint = os.getenv("INFINO_ENDPOINT", "https://api.infino.ai")
-    
+
     sdk = InfinoSDK(access_key, secret_key, endpoint)
     # Run examples
     handle_not_found_errors(sdk)
@@ -222,12 +227,12 @@ def main():
     handle_validation_errors(sdk)
     graceful_degradation(sdk)
     batch_operations_with_error_handling(sdk)
-    
+
     # Examples that create their own SDK instances
     handle_network_errors()
     retry_with_custom_config()
     context_manager_error_handling()
-    
+
     print("\n" + "=" * 50)
     print("✅ All error handling examples completed!")
     print("=" * 50)

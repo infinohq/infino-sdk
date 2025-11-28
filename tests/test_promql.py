@@ -6,27 +6,20 @@ Based on patterns from infino/tests/api/python/src/utils/performance.py
 
 import json
 import time
+from unittest.mock import Mock
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from infino_sdk import InfinoSDK, InfinoError
 
-
-@pytest.fixture
-def mock_sdk():
-    """Create a mock SDK instance"""
-    with patch('infino_sdk.lib.requests') as mock_requests:
-        sdk = InfinoSDK("test_access", "test_secret", "https://test.infino.ws")
-        sdk._session = MagicMock()
-        yield sdk, mock_requests
+from infino_sdk import InfinoError, InfinoSDK
 
 
 class TestPromQLInstantQueries:
     """Test PromQL instant queries"""
-    
+
     def test_simple_instant_query(self, mock_sdk):
         """Test simple PromQL instant query"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
@@ -37,25 +30,28 @@ class TestPromQLInstantQueries:
                 "result": [
                     {
                         "metric": {"__name__": "cpu_usage", "host": "server1"},
-                        "value": [time.time(), "75.5"]
+                        "value": [time.time(), "75.5"],
                     }
-                ]
-            }
+                ],
+            },
         }
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query
-        result = sdk.query_dataset_in_promql('cpu_usage{host="server1"}', "test_dataset.aly")
-        
+        result = sdk.query_dataset_in_promql(
+            'cpu_usage{host="server1"}', "test_dataset.aly"
+        )
+
         # Verify
         assert result["status"] == "success"
         assert result["data"]["resultType"] == "vector"
         assert len(result["data"]["result"]) == 1
-        
+
     def test_instant_query_with_aggregation(self, mock_sdk):
         """Test PromQL instant query with aggregation"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
@@ -63,27 +59,23 @@ class TestPromQLInstantQueries:
             "status": "success",
             "data": {
                 "resultType": "vector",
-                "result": [
-                    {
-                        "metric": {},
-                        "value": [time.time(), "60.4"]
-                    }
-                ]
-            }
+                "result": [{"metric": {}, "value": [time.time(), "60.4"]}],
+            },
         }
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query
         result = sdk.prom_ql_query("avg(cpu_usage)", "test_index.aly")
-        
+
         # Verify
         assert result["status"] == "success"
         assert result["data"]["resultType"] == "vector"
-        
+
     def test_instant_query_by_label(self, mock_sdk):
         """Test PromQL instant query with aggregation by label"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
@@ -92,22 +84,17 @@ class TestPromQLInstantQueries:
             "data": {
                 "resultType": "vector",
                 "result": [
-                    {
-                        "metric": {"host": "server1"},
-                        "value": [time.time(), "77.5"]
-                    },
-                    {
-                        "metric": {"host": "server2"},
-                        "value": [time.time(), "45.3"]
-                    }
-                ]
-            }
+                    {"metric": {"host": "server1"}, "value": [time.time(), "77.5"]},
+                    {"metric": {"host": "server2"}, "value": [time.time(), "45.3"]},
+                ],
+            },
         }
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query
         result = sdk.prom_ql_query("avg(cpu_usage) by (host)", "test_index.aly")
-        
+
         # Verify
         assert result["status"] == "success"
         assert len(result["data"]["result"]) == 2
@@ -115,11 +102,11 @@ class TestPromQLInstantQueries:
 
 class TestPromQLRangeQueries:
     """Test PromQL range queries"""
-    
+
     def test_basic_range_query(self, mock_sdk):
         """Test basic PromQL range query"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock response
         now = int(time.time() * 1000)
         mock_response = Mock()
@@ -133,37 +120,34 @@ class TestPromQLRangeQueries:
                         "metric": {"__name__": "cpu_usage", "host": "server1"},
                         "values": [
                             [now / 1000, "75.5"],
-                            [(now + 60000) / 1000, "80.1"]
-                        ]
+                            [(now + 60000) / 1000, "80.1"],
+                        ],
                     }
-                ]
-            }
+                ],
+            },
         }
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query
         start_time = now - 60000
         end_time = now + 120000
         step = 60
-        
+
         result = sdk.query_dataset_in_promql_range(
-            'cpu_usage{host="server1"}',
-            start_time,
-            end_time,
-            step,
-            "test_dataset.aly"
+            'cpu_usage{host="server1"}', start_time, end_time, step, "test_dataset.aly"
         )
-        
+
         # Verify
         assert result["status"] == "success"
         assert result["data"]["resultType"] == "matrix"
         assert len(result["data"]["result"]) == 1
         assert len(result["data"]["result"][0]["values"]) == 2
-        
+
     def test_range_query_with_rate(self, mock_sdk):
         """Test PromQL range query with rate function"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock response
         now = int(time.time() * 1000)
         mock_response = Mock()
@@ -177,35 +161,32 @@ class TestPromQLRangeQueries:
                         "metric": {"__name__": "cpu_usage", "host": "server1"},
                         "values": [
                             [now / 1000, "0.05"],
-                            [(now + 60000) / 1000, "0.06"]
-                        ]
+                            [(now + 60000) / 1000, "0.06"],
+                        ],
                     }
-                ]
-            }
+                ],
+            },
         }
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query
         start_time = now - 60000
         end_time = now + 300000
         step = 60
-        
+
         result = sdk.prom_ql_query_range(
-            "rate(cpu_usage[5m])",
-            start_time,
-            end_time,
-            step,
-            "test_index.aly"
+            "rate(cpu_usage[5m])", start_time, end_time, step, "test_index.aly"
         )
-        
+
         # Verify
         assert result["status"] == "success"
         assert result["data"]["resultType"] == "matrix"
-        
+
     def test_range_query_multiple_series(self, mock_sdk):
         """Test PromQL range query returning multiple time series"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock response
         now = int(time.time() * 1000)
         mock_response = Mock()
@@ -219,34 +200,31 @@ class TestPromQLRangeQueries:
                         "metric": {"host": "server1"},
                         "values": [
                             [now / 1000, "75.5"],
-                            [(now + 60000) / 1000, "80.1"]
-                        ]
+                            [(now + 60000) / 1000, "80.1"],
+                        ],
                     },
                     {
                         "metric": {"host": "server2"},
                         "values": [
                             [now / 1000, "45.3"],
-                            [(now + 60000) / 1000, "48.7"]
-                        ]
-                    }
-                ]
-            }
+                            [(now + 60000) / 1000, "48.7"],
+                        ],
+                    },
+                ],
+            },
         }
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query
         start_time = now - 60000
         end_time = now + 120000
         step = 60
-        
+
         result = sdk.prom_ql_query_range(
-            "avg(cpu_usage) by (host)",
-            start_time,
-            end_time,
-            step,
-            "test_index.aly"
+            "avg(cpu_usage) by (host)", start_time, end_time, step, "test_index.aly"
         )
-        
+
         # Verify
         assert result["status"] == "success"
         assert result["data"]["resultType"] == "matrix"
@@ -255,11 +233,11 @@ class TestPromQLRangeQueries:
 
 class TestPromQLLabelSelectors:
     """Test PromQL label selector queries"""
-    
+
     def test_equality_selector(self, mock_sdk):
         """Test PromQL query with equality label selector"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
@@ -270,24 +248,25 @@ class TestPromQLLabelSelectors:
                 "result": [
                     {
                         "metric": {"__name__": "cpu_usage", "env": "production"},
-                        "value": [time.time(), "75.5"]
+                        "value": [time.time(), "75.5"],
                     }
-                ]
-            }
+                ],
+            },
         }
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query
         result = sdk.prom_ql_query('cpu_usage{env="production"}', "test_index.aly")
-        
+
         # Verify
         assert result["status"] == "success"
         assert result["data"]["result"][0]["metric"]["env"] == "production"
-        
+
     def test_regex_selector(self, mock_sdk):
         """Test PromQL query with regex label selector"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
@@ -298,28 +277,29 @@ class TestPromQLLabelSelectors:
                 "result": [
                     {
                         "metric": {"__name__": "cpu_usage", "region": "us-east"},
-                        "value": [time.time(), "75.5"]
+                        "value": [time.time(), "75.5"],
                     },
                     {
                         "metric": {"__name__": "cpu_usage", "region": "us-west"},
-                        "value": [time.time(), "45.3"]
-                    }
-                ]
-            }
+                        "value": [time.time(), "45.3"],
+                    },
+                ],
+            },
         }
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query
         result = sdk.prom_ql_query('cpu_usage{region=~"us-.*"}', "test_index.aly")
-        
+
         # Verify
         assert result["status"] == "success"
         assert len(result["data"]["result"]) == 2
-        
+
     def test_multiple_label_selectors(self, mock_sdk):
         """Test PromQL query with multiple label selectors"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
@@ -332,21 +312,21 @@ class TestPromQLLabelSelectors:
                         "metric": {
                             "__name__": "cpu_usage",
                             "env": "production",
-                            "region": "us-east"
+                            "region": "us-east",
                         },
-                        "value": [time.time(), "75.5"]
+                        "value": [time.time(), "75.5"],
                     }
-                ]
-            }
+                ],
+            },
         }
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query
         result = sdk.prom_ql_query(
-            'cpu_usage{env="production",region="us-east"}',
-            "test_index.aly"
+            'cpu_usage{env="production",region="us-east"}', "test_index.aly"
         )
-        
+
         # Verify
         assert result["status"] == "success"
         assert result["data"]["result"][0]["metric"]["env"] == "production"
@@ -355,11 +335,11 @@ class TestPromQLLabelSelectors:
 
 class TestPromQLArithmeticOperations:
     """Test PromQL arithmetic operations"""
-    
+
     def test_multiplication(self, mock_sdk):
         """Test PromQL query with multiplication"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
@@ -370,24 +350,25 @@ class TestPromQLArithmeticOperations:
                 "result": [
                     {
                         "metric": {"__name__": "cpu_usage", "host": "server1"},
-                        "value": [time.time(), "151.0"]
+                        "value": [time.time(), "151.0"],
                     }
-                ]
-            }
+                ],
+            },
         }
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query
         result = sdk.prom_ql_query('cpu_usage{host="server1"} * 2', "test_index.aly")
-        
+
         # Verify
         assert result["status"] == "success"
         assert float(result["data"]["result"][0]["value"][1]) == 151.0
-        
+
     def test_addition(self, mock_sdk):
         """Test PromQL query with addition"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
@@ -395,77 +376,74 @@ class TestPromQLArithmeticOperations:
             "status": "success",
             "data": {
                 "resultType": "vector",
-                "result": [
-                    {
-                        "metric": {},
-                        "value": [time.time(), "100.0"]
-                    }
-                ]
-            }
+                "result": [{"metric": {}, "value": [time.time(), "100.0"]}],
+            },
         }
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query
-        result = sdk.prom_ql_query('cpu_usage + memory_usage', "test_index.aly")
-        
+        result = sdk.prom_ql_query("cpu_usage + memory_usage", "test_index.aly")
+
         # Verify
         assert result["status"] == "success"
 
 
 class TestPromQLErrorHandling:
     """Test PromQL error handling"""
-    
+
     def test_invalid_query_syntax(self, mock_sdk):
         """Test handling of invalid PromQL syntax"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock error response
         mock_response = Mock()
         mock_response.status_code = 400
         mock_response.json.return_value = {
             "status": "error",
             "errorType": "bad_data",
-            "error": "parse error: unexpected end of input"
+            "error": "parse error: unexpected end of input",
         }
         mock_response.raise_for_status.side_effect = Exception("Bad Request")
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query and expect error
         with pytest.raises(Exception):
             sdk.query_dataset_in_promql("cpu_usage{", "test_dataset.aly")
-            
+
     def test_query_timeout(self, mock_sdk):
         """Test handling of query timeout"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock timeout response
         mock_response = Mock()
         mock_response.status_code = 504
         mock_response.json.return_value = {
             "status": "error",
             "errorType": "timeout",
-            "error": "query timeout"
+            "error": "query timeout",
         }
         mock_response.raise_for_status.side_effect = Exception("Gateway Timeout")
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query and expect error
         with pytest.raises(Exception):
             sdk.query_dataset_in_promql("rate(cpu_usage[1h])", "test_dataset.aly")
-            
+
     def test_dataset_not_found(self, mock_sdk):
         """Test handling of non-existent dataset"""
         sdk, mock_requests = mock_sdk
-        
+
         # Mock error response
         mock_response = Mock()
         mock_response.status_code = 404
-        mock_response.json.return_value = {
-            "error": "index_not_found_exception"
-        }
+        mock_response.json.return_value = {"error": "index_not_found_exception"}
         mock_response.raise_for_status.side_effect = Exception("Not Found")
-        sdk._session.request.return_value = mock_response
-        
+        mock_response.text = json.dumps(mock_response.json.return_value)
+        sdk.session.request.return_value = mock_response
+
         # Execute query and expect error
         with pytest.raises(Exception):
             sdk.query_dataset_in_promql("cpu_usage", "nonexistent.aly")

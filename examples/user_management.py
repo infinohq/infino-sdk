@@ -8,7 +8,8 @@ This example demonstrates:
 """
 
 import os
-from infino_sdk import InfinoSDK, InfinoError
+
+from infino_sdk import InfinoError, InfinoSDK
 
 
 def main():
@@ -18,7 +19,7 @@ def main():
 
     sdk = InfinoSDK(access_key, secret_key, endpoint)
     print("✅ Connected to Infino")
-        
+
     # Create a custom role
     print("\n👤 Creating custom role...")
     role_name = "data_analyst"
@@ -43,7 +44,7 @@ Permissions:
     Actions: [read]
     Resources: ["*"]
 """
-        
+
     try:
         sdk.create_role(role_name, role_config)
         print(f"✅ Created role: {role_name}")
@@ -62,7 +63,7 @@ Password: SecureP@ssw0rd123!
 Roles:
   - data_analyst
 """
-        
+
     try:
         sdk.create_user(username, user_config)
         print(f"✅ Created user: {username}")
@@ -79,8 +80,8 @@ Roles:
         print(f"User: {username}")
         # Simplified response typically includes 'Roles' and may include 'account_id'
         obj = user.get(username, user)
-        roles = obj.get('Roles') or obj.get('roles') or []
-        account_id = obj.get('account_id') or obj.get('AccountId')
+        roles = obj.get("Roles") or obj.get("roles") or []
+        account_id = obj.get("account_id") or obj.get("AccountId")
         print(f"  Roles: {roles}")
         if account_id:
             print(f"  Account ID: {account_id}")
@@ -148,7 +149,7 @@ Roles:
         #     print(f"✅ Deleted user: {username}")
         # except InfinoError as e:
         #     print(f"⚠️  Could not delete user: {e.message}")
-        
+
         # try:
         #     await sdk.delete_role(role_name)
         #     print(f"✅ Deleted role: {role_name}")

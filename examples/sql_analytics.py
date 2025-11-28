@@ -9,7 +9,8 @@ This example demonstrates:
 """
 
 import os
-from infino_sdk import InfinoSDK, InfinoError
+
+from infino_sdk import InfinoError, InfinoSDK
 
 
 def main():
@@ -19,7 +20,7 @@ def main():
 
     sdk = InfinoSDK(access_key, secret_key, endpoint)
     print("✅ Connected to Infino\n")
-    
+
     # Simple SELECT query
     print("📊 Simple SELECT Query")
     print("-" * 50)
@@ -75,7 +76,9 @@ def main():
             print(f"  {row.get('category')}:")
             print(f"    Count: {row.get('product_count')}")
             print(f"    Avg Price: ${row.get('avg_price', 0):.2f}")
-            print(f"    Range: ${row.get('min_price', 0):.2f} - ${row.get('max_price', 0):.2f}")
+            print(
+                f"    Range: ${row.get('min_price', 0):.2f} - ${row.get('max_price', 0):.2f}"
+            )
             print()
     except InfinoError as e:
         print(f"❌ Query failed: {e.message}")
@@ -98,7 +101,9 @@ def main():
         rows = result.get("rows", [])
         print(f"Top-rated categories (>100 products, >4.0 rating):\n")
         for row in rows:
-            print(f"  {row.get('category')}: {row.get('avg_rating'):.1f} ⭐ ({row.get('count')} products)")
+            print(
+                f"  {row.get('category')}: {row.get('avg_rating'):.1f} ⭐ ({row.get('count')} products)"
+            )
     except InfinoError as e:
         print(f"❌ Query failed: {e.message}")
 
@@ -121,7 +126,9 @@ def main():
         rows = result.get("rows", [])
         print(f"Daily Order Statistics (Last 30 days):\n")
         for row in rows[:10]:
-            print(f"  {row.get('day')}: {row.get('orders')} orders, ${row.get('revenue', 0):.2f} revenue")
+            print(
+                f"  {row.get('day')}: {row.get('orders')} orders, ${row.get('revenue', 0):.2f} revenue"
+            )
     except InfinoError as e:
         print(f"❌ Query failed: {e.message}")
 
@@ -144,10 +151,12 @@ def main():
         print(f"Top products by price in each category:\n")
         current_category = None
         for row in rows:
-            if row.get('category') != current_category:
-                current_category = row.get('category')
+            if row.get("category") != current_category:
+                current_category = row.get("category")
                 print(f"\n  {current_category}:")
-            print(f"    #{row.get('price_rank')} {row.get('name')}: ${row.get('price')}")
+            print(
+                f"    #{row.get('price_rank')} {row.get('name')}: ${row.get('price')}"
+            )
     except InfinoError as e:
         print(f"❌ Query failed: {e.message}")
 

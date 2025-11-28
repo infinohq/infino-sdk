@@ -6,13 +6,14 @@ import hashlib
 import hmac
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional, List
-from urllib.parse import urlparse
+import time
 import urllib.parse
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
-import time
+from types import SimpleNamespace
+from typing import Any, Dict, List, Optional, Protocol
+from urllib.parse import urlparse
 
 import backoff
 import requests
@@ -52,13 +53,15 @@ EMPTY_PAYLOAD_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b78
 TRACE_LEVEL = 5  # Lower than DEBUG (10)
 logging.addLevelName(TRACE_LEVEL, "TRACE")
 
+
 def trace(self, message, *args, **kwargs):
     """Custom trace level logging."""
     if self.isEnabledFor(TRACE_LEVEL):
         self.log(TRACE_LEVEL, message, *args, **kwargs)
 
+
 # Add trace method to Logger class
-logging.Logger.trace = trace
+logging.Logger.trace = trace  # type: ignore[attr-defined]
 
 # Timeouts (in milliseconds unless specified)
 REQUEST_TIMEOUT_SECS = 180
@@ -66,8 +69,10 @@ RETRY_INITIAL_INTERVAL = 1000
 RETRY_MAX_INTERVAL = 15000
 RETRY_MAX_ELAPSED_TIME = 90000
 
+
 class InfinoError(Exception):
     """SDK error wrapper"""
+
     class Type(Enum):
         REQUEST = "request"
         NETWORK = "network"
@@ -76,7 +81,13 @@ class InfinoError(Exception):
         TIMEOUT = "timeout"
         INVALID_REQUEST = "invalid_request"
 
-    def __init__(self, error_type: Type, message: str, status_code: Optional[int] = None, url: Optional[str] = None):
+    def __init__(
+        self,
+        error_type: Type,
+        message: str,
+        status_code: Optional[int] = None,
+        url: Optional[str] = None,
+    ):
         self.error_type = error_type
         self.message = message
         self._status_code = status_code
@@ -85,19 +96,28 @@ class InfinoError(Exception):
     def status_code(self) -> Optional[int]:
         return self._status_code
 
+
 @dataclass
 class RetryConfig:
     def __init__(self):
         self.initial_interval = RETRY_INITIAL_INTERVAL  # milliseconds
-        self.max_interval = RETRY_MAX_INTERVAL    # milliseconds
+        self.max_interval = RETRY_MAX_INTERVAL  # milliseconds
         self.max_elapsed_time = RETRY_MAX_ELAPSED_TIME  # milliseconds
         self.max_retries = 3
+
 
 class SignatureComponents:
     def __init__(self, access_key: str, request_date: str, request_datetime: str):
         self.access_key = access_key
-        self.request_date = request_date        # YYYYMMDD
+        self.request_date = request_date  # YYYYMMDD
         self.request_datetime = request_datetime  # ISO8601/RFC3339 format
+
+
+class _RequestLike(Protocol):
+    method: str
+    url: str
+    headers: Dict[str, str]
+
 
 class InfinoSDK:
     def __init__(
@@ -105,13 +125,13 @@ class InfinoSDK:
         access_key: str,
         secret_key: str,
         endpoint: str,
-        retry_config: Optional[RetryConfig] = None
+        retry_config: Optional[RetryConfig] = None,
     ):
         self.access_key = access_key
         self.secret_key = secret_key
-        self.endpoint = endpoint.rstrip('/')
+        self.endpoint = endpoint.rstrip("/")
         self.retry_config = retry_config or RetryConfig()
-        
+
         # AWS SigV4 parameters
         self.region = "us-east-1"
         self.service = "es"  # OpenSearch service
@@ -131,7 +151,9 @@ class InfinoSDK:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    async def websocket_connect(self, path: str, headers: Optional[Dict[str, str]] = None):
+    async def websocket_connect(
+        self, path: str, headers: Optional[Dict[str, str]] = None
+    ):
         """Connect to WebSocket endpoint with SigV4 query parameter authentication"""
         parsed = urlparse(self.endpoint)
         ws_proto = "wss" if parsed.scheme == "https" else "ws"
@@ -139,32 +161,41 @@ class InfinoSDK:
 
         # Generate timestamp for signing
         timestamp = datetime.now(timezone.utc)
-        date_stamp = timestamp.strftime('%Y%m%d')
-        amz_date = timestamp.strftime('%Y%m%dT%H%M%SZ')
+        date_stamp = timestamp.strftime("%Y%m%d")
+        amz_date = timestamp.strftime("%Y%m%dT%H%M%SZ")
 
         # AWS SigV4 parameters
-        algorithm = 'AWS4-HMAC-SHA256'
-        credential = f"{self.access_key}/{date_stamp}/{self.region}/{self.service}/aws4_request"
-        signed_headers = 'host'
+        algorithm = "AWS4-HMAC-SHA256"
+        credential = (
+            f"{self.access_key}/{date_stamp}/{self.region}/{self.service}/aws4_request"
+        )
+        signed_headers = "host"
 
         # Build query parameters (without signature yet)
         query_params = [
-            ('X-Amz-Algorithm', algorithm),
-            ('X-Amz-Credential', credential),
-            ('X-Amz-Date', amz_date),
-            ('X-Amz-SignedHeaders', signed_headers)
+            ("X-Amz-Algorithm", algorithm),
+            ("X-Amz-Credential", credential),
+            ("X-Amz-Date", amz_date),
+            ("X-Amz-SignedHeaders", signed_headers),
         ]
 
         # Sort query parameters for canonical request
         query_params.sort(key=lambda x: x[0])
 
         # URL encode parameters
-        canonical_querystring = '&'.join([f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}" for k, v in query_params])
+        canonical_querystring = "&".join(
+            [
+                f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}"
+                for k, v in query_params
+            ]
+        )
 
         # Create canonical request
         canonical_uri = path
         canonical_headers = f"host:{host}\n"
-        payload_hash = hashlib.sha256(b'').hexdigest()  # Empty string hash for WebSocket
+        payload_hash = hashlib.sha256(
+            b""
+        ).hexdigest()  # Empty string hash for WebSocket
 
         canonical_request = f"GET\n{canonical_uri}\n{canonical_querystring}\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
 
@@ -185,7 +216,14 @@ class InfinoSDK:
             return await websockets.connect(ws_url, additional_headers=headers.items())
         return await websockets.connect(ws_url)
 
-    def request(self, method: str, url: str, headers: Optional[Dict[str, str]] = None, body: Optional[str] = None, params: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    def request(
+        self,
+        method: str,
+        url: str,
+        headers: Optional[Dict[str, str]] = None,
+        body: Optional[str] = None,
+        params: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
         """Build, sign, and execute an HTTP request"""
 
         logger.debug(f"INFINO SDK: Making {method} request to {url}")
@@ -215,12 +253,21 @@ class InfinoSDK:
 
         # Sign the headers if we have credentials
         if self.access_key and self.secret_key:
-            req_headers = self.sign_request_headers(method, url, req_headers, timestamp, payload_hash)
+            req_headers = self.sign_request_headers(
+                method, url, req_headers, timestamp, payload_hash
+            )
 
         # Execute request with retries
         return self.execute_request(method, url, req_headers, body, params)
 
-    def sign_request_headers(self, method: str, url: str, headers: Dict[str, str], timestamp: datetime, payload_hash: str) -> Dict[str, str]:
+    def sign_request_headers(
+        self,
+        method: str,
+        url: str,
+        headers: Dict[str, str],
+        timestamp: datetime,
+        payload_hash: str,
+    ) -> Dict[str, str]:
         """Sign request headers for AWS SigV4"""
         request_datetime = timestamp.strftime(DATE_FORMAT)
         request_date = timestamp.strftime(SHORT_DATE_FORMAT)
@@ -242,7 +289,7 @@ class InfinoSDK:
         headers_to_sign = [
             HOST_HEADER.lower(),
             X_AMZ_CONTENT_SHA256_HEADER.lower(),
-            X_AMZ_DATE_HEADER.lower()
+            X_AMZ_DATE_HEADER.lower(),
         ]
         if "Content-Type" in signed_headers:
             headers_to_sign.append("content-type")
@@ -251,18 +298,14 @@ class InfinoSDK:
         signing_key = self.derive_signing_key(request_date)
 
         # Create temp request for canonical request
-        temp_req = type('Request', (), {
-            'method': method,
-            'url': url,
-            'headers': signed_headers
-        })
+        temp_req = SimpleNamespace(method=method, url=url, headers=signed_headers)
 
         canonical_request = self.create_canonical_request(temp_req, headers_to_sign)
 
         components = SignatureComponents(
             access_key=self.access_key,
             request_date=request_date,
-            request_datetime=request_datetime
+            request_datetime=request_datetime,
         )
 
         string_to_sign = self.create_string_to_sign(canonical_request, components)
@@ -276,7 +319,14 @@ class InfinoSDK:
         signed_headers[AUTHORIZATION_HEADER] = auth_header
         return signed_headers
 
-    def execute_request(self, method: str, url: str, headers: Dict[str, str], body: Optional[str], params: Optional[Dict[str, str]]) -> Dict[str, Any]:
+    def execute_request(
+        self,
+        method: str,
+        url: str,
+        headers: Dict[str, str],
+        body: Optional[str],
+        params: Optional[Dict[str, str]],
+    ) -> Dict[str, Any]:
         """Execute request with retries"""
         max_retries = self.retry_config.max_retries
         retry_delay = self.retry_config.initial_interval
@@ -289,9 +339,9 @@ class InfinoSDK:
                     headers=headers,
                     data=body,
                     params=params,
-                    timeout=REQUEST_TIMEOUT_SECS
+                    timeout=REQUEST_TIMEOUT_SECS,
                 )
-                
+
                 status = response.status_code
                 text = response.text
 
@@ -318,7 +368,9 @@ class InfinoSDK:
                     logger.error(f"INFINO SDK: Server error {status}: {text}")
                     if attempt < max_retries - 1:
                         time.sleep(retry_delay)
-                        retry_delay = min(retry_delay * 2, self.retry_config.max_interval)
+                        retry_delay = min(
+                            retry_delay * 2, self.retry_config.max_interval
+                        )
                         continue
                     raise InfinoError(InfinoError.Type.REQUEST, text, status, url)
 
@@ -333,7 +385,9 @@ class InfinoSDK:
 
         raise InfinoError(InfinoError.Type.REQUEST, "Max retries exceeded", 0, url)
 
-    def sign_request(self, request: requests.Request, timestamp: datetime) -> requests.Request:
+    def sign_request(
+        self, request: requests.Request, timestamp: datetime
+    ) -> requests.Request:
         """Sign request using AWS SigV4"""
         request_datetime = timestamp.strftime(DATE_FORMAT)
         request_date = timestamp.strftime(SHORT_DATE_FORMAT)
@@ -343,8 +397,7 @@ class InfinoSDK:
 
         # Get payload hash
         payload_hash = request.headers.get(
-            X_AMZ_CONTENT_SHA256_HEADER,
-            EMPTY_PAYLOAD_HASH
+            X_AMZ_CONTENT_SHA256_HEADER, EMPTY_PAYLOAD_HASH
         )
 
         # If no content hash header exists, add it
@@ -354,35 +407,35 @@ class InfinoSDK:
         components = SignatureComponents(
             access_key=self.access_key,
             request_date=request_date,
-            request_datetime=request_datetime
+            request_datetime=request_datetime,
         )
 
         logger.debug(f"SIGN REQUEST: URL path: {urlparse(request.url).path}")
         logger.debug(f"SIGN REQUEST: Host: {urlparse(request.url).hostname}")
         logger.debug(f"SIGN REQUEST: Request date: {request_date}")
         logger.debug(f"SIGN REQUEST: Request datetime: {request_datetime}")
-        
+
         # Get host from URL - AWS requires host header
         host = urlparse(request.url).hostname
         if not host:
             raise InfinoError(InfinoError.Type.INVALID_REQUEST, "Missing host")
-            
+
         # Ensure host header exists
         request.headers[HOST_HEADER] = host
-        
+
         # Create a list of headers to sign - Must include all headers that are part of the signature calculation
         signed_headers = [
             HOST_HEADER.lower(),
             X_AMZ_CONTENT_SHA256_HEADER.lower(),
-            X_AMZ_DATE_HEADER.lower()
+            X_AMZ_DATE_HEADER.lower(),
         ]
-        
+
         # Add content-type if it exists in the request
         if "Content-Type" in request.headers:
             signed_headers.append("content-type")
-        
+
         signing_key = self.derive_signing_key(request_date)
-        
+
         canonical_request = self.create_canonical_request(request, signed_headers)
         string_to_sign = self.create_string_to_sign(canonical_request, components)
         signature = self.calculate_signature(signing_key, string_to_sign)
@@ -396,13 +449,15 @@ class InfinoSDK:
         auth_header = f"{ALGORITHM} {CREDENTIAL_HEADER}={components.access_key}/{components.request_date}/{REGION}/{SIGNING_NAME}/{TERMINATION}, {SIGNED_HEADERS_HEADER}={signed_headers_str}, {SIGNATURE_HEADER}={signature}"
 
         logger.debug(f"SIGN REQUEST: Final auth header: {auth_header}")
-        
+
         # Use the standard Authorization header as AWS does
         request.headers[AUTHORIZATION_HEADER] = auth_header
 
         return request
 
-    def create_canonical_request(self, request: requests.Request, signed_headers: list) -> str:
+    def create_canonical_request(
+        self, request: _RequestLike, signed_headers: List[str]
+    ) -> str:
         """Create canonical request for SigV4"""
         # 1. HTTP Method
         method = request.method.upper()
@@ -412,7 +467,7 @@ class InfinoSDK:
         canonical_uri = url.path
         if not canonical_uri or canonical_uri == "":
             canonical_uri = "/"
-        
+
         logger.debug(f"SIGN REQUEST: URL path: {url.path}")
         logger.debug(f"SIGN REQUEST: Canonical URI: {canonical_uri}")
 
@@ -424,21 +479,22 @@ class InfinoSDK:
         # 4. Headers - Must be sorted alphabetically for the canonical request
         # Sort headers alphabetically as required by AWS SigV4
         sorted_headers = sorted(signed_headers)
-        
+
         # Build canonical headers section including only the sorted signed headers
         canonical_headers = ""
         for header in sorted_headers:
             # Try both original case and lowercase to find the value
-            header_value = request.headers.get(header.title(), request.headers.get(header, ""))
+            header_value = request.headers.get(
+                header.title(), request.headers.get(header, "")
+            )
             canonical_headers += f"{header}:{header_value}\n"
-        
+
         # 5. Signed Headers - must be alphabetical for canonical request
         signed_headers_str = ";".join(sorted_headers)
 
         # 6. Get payload hash
         payload_hash = request.headers.get(
-            X_AMZ_CONTENT_SHA256_HEADER,
-            EMPTY_PAYLOAD_HASH
+            X_AMZ_CONTENT_SHA256_HEADER, EMPTY_PAYLOAD_HASH
         )
 
         # Combine all components with newlines - exactly matching AWS format
@@ -453,7 +509,6 @@ class InfinoSDK:
 
         logger.debug(f"SIGN REQUEST: Canonical request:\n{canonical_request}")
         return canonical_request
-
 
     def hmac_sha256(self, key: bytes, data: bytes) -> bytes:
         """Calculate HMAC-SHA256"""
@@ -471,24 +526,21 @@ class InfinoSDK:
 
         # Format the key string exactly as the server does
         key_string = f"{KEY_PREFIX}{self.secret_key}"
-        
+
         # Step 1: kDate = HMAC(KEY_PREFIX + secret_key, date)
-        k_date = self.hmac_sha256(
-            key_string.encode('utf-8'),
-            date.encode('utf-8')
-        )
+        k_date = self.hmac_sha256(key_string.encode("utf-8"), date.encode("utf-8"))
         logger.debug(f"SIGN REQUEST: k_date (hex): {k_date.hex()}")
 
         # Step 2: kRegion = HMAC(kDate, region)
-        k_region = self.hmac_sha256(k_date, REGION.encode('utf-8'))
+        k_region = self.hmac_sha256(k_date, REGION.encode("utf-8"))
         logger.debug(f"SIGN REQUEST: k_region (hex): {k_region.hex()}")
 
         # Step 3: kService = HMAC(kRegion, service)
-        k_service = self.hmac_sha256(k_region, SIGNING_NAME.encode('utf-8'))
+        k_service = self.hmac_sha256(k_region, SIGNING_NAME.encode("utf-8"))
         logger.debug(f"SIGN REQUEST: k_service (hex): {k_service.hex()}")
 
         # Step 4: signing_key = HMAC(kService, termination)
-        signing_key = self.hmac_sha256(k_service, TERMINATION.encode('utf-8'))
+        signing_key = self.hmac_sha256(k_service, TERMINATION.encode("utf-8"))
         logger.debug(f"SIGN REQUEST: final signing_key (hex): {signing_key.hex()}")
 
         return signing_key
@@ -505,10 +557,14 @@ class InfinoSDK:
 
         return signature
 
-    def create_string_to_sign(self, canonical_request: str, components: SignatureComponents) -> str:
+    def create_string_to_sign(
+        self, canonical_request: str, components: SignatureComponents
+    ) -> str:
         """Create SigV4 string to sign"""
-        credential_scope = f"{components.request_date}/{REGION}/{SIGNING_NAME}/{TERMINATION}"
-        
+        credential_scope = (
+            f"{components.request_date}/{REGION}/{SIGNING_NAME}/{TERMINATION}"
+        )
+
         string_to_sign = (
             f"{ALGORITHM}\n"
             f"{components.request_datetime}\n"
@@ -525,10 +581,10 @@ class InfinoSDK:
             return ""
 
         params = []
-        for p in query.split('&'):
+        for p in query.split("&"):
             if not p:
                 continue
-            parts = p.split('=', 1)
+            parts = p.split("=", 1)
             key = self.uri_encode(parts[0]) if parts else ""
             value = self.uri_encode(parts[1]) if len(parts) > 1 else ""
             params.append((key, value))
@@ -539,12 +595,16 @@ class InfinoSDK:
     def uri_encode(self, s: str) -> str:
         """Percent-encode string for URI"""
         encoded = ""
-        for byte in s.encode('utf-8'):
-            if (byte >= ord('A') and byte <= ord('Z')) or \
-               (byte >= ord('a') and byte <= ord('z')) or \
-               (byte >= ord('0') and byte <= ord('9')) or \
-               byte == ord('-') or byte == ord('_') or \
-               byte == ord('.') or byte == ord('~'):
+        for byte in s.encode("utf-8"):
+            if (
+                (byte >= ord("A") and byte <= ord("Z"))
+                or (byte >= ord("a") and byte <= ord("z"))
+                or (byte >= ord("0") and byte <= ord("9"))
+                or byte == ord("-")
+                or byte == ord("_")
+                or byte == ord(".")
+                or byte == ord("~")
+            ):
                 encoded += chr(byte)
             else:
                 encoded += f"%{byte:02X}"
@@ -560,7 +620,9 @@ class InfinoSDK:
         except InfinoError as e:
             # 409 CONFLICT is acceptable for dataset creation - it means the dataset already exists
             if e.status_code() == 409:
-                logger.debug(f"INFINO SDK: Dataset '{dataset}' already exists (409 CONFLICT), continuing")
+                logger.debug(
+                    f"INFINO SDK: Dataset '{dataset}' already exists (409 CONFLICT), continuing"
+                )
                 return {"acknowledged": True, "index": dataset}
             raise
 
@@ -579,7 +641,10 @@ class InfinoSDK:
             return response
         if isinstance(response, str):
             return {"text": response}
-        raise InfinoError(InfinoError.Type.INVALID_REQUEST, "Unexpected response from dataset metadata")
+        raise InfinoError(
+            InfinoError.Type.INVALID_REQUEST,
+            "Unexpected response from dataset metadata",
+        )
 
     def get_dataset_schema(self, dataset: str) -> Dict[str, Any]:
         """Query a dataset for its schema"""
@@ -628,7 +693,9 @@ class InfinoSDK:
         response = self.request("DELETE", url)
         return response
 
-    def add_thread_message(self, thread_id: str, message: Dict[str, Any]) -> Dict[str, Any]:
+    def add_thread_message(
+        self, thread_id: str, message: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Add a message to a specific Fino thread"""
         url = f"{self.endpoint}/fino/threads/{thread_id}/messages"
         response = self.request("POST", url, None, json.dumps(message))
@@ -653,7 +720,6 @@ class InfinoSDK:
         response = self.request("GET", url)
         return response
 
-
     # Query Operations - Datasets
     def query_dataset_in_querydsl(self, dataset: str, query: str) -> Dict[str, Any]:
         """Query a dataset in QueryDSL"""
@@ -669,9 +735,12 @@ class InfinoSDK:
         response = self.request("GET", url, None, json_body)
         return response
 
-    def query_dataset_in_promql(self, query: str, dataset: Optional[str] = None) -> Dict[str, Any]:
+    def query_dataset_in_promql(
+        self, query: str, dataset: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Query a dataset in PromQL"""
         from urllib.parse import quote
+
         url = f"{self.endpoint}/promql/query"
 
         form_data = f"query={quote(query)}"
@@ -682,9 +751,12 @@ class InfinoSDK:
         response = self.request("POST", url, headers, form_data)
         return response
 
-    def query_dataset_in_promql_range(self, query: str, start: int, end: int, step: int, dataset: Optional[str] = None) -> Dict[str, Any]:
+    def query_dataset_in_promql_range(
+        self, query: str, start: int, end: int, step: int, dataset: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Query a dataset in PromQL with time range"""
         from urllib.parse import quote
+
         url = f"{self.endpoint}/promql/query_range"
 
         form_data = f"query={quote(query)}&start={start}&end={end}&step={step}"
@@ -698,19 +770,16 @@ class InfinoSDK:
     # Correlate Operations - Upload to a dataset
     def upload_json_to_dataset(self, dataset: str, payload: str) -> Dict[str, Any]:
         """Upload JSON records to a dataset
-        
+
         Args:
             dataset: Dataset name
             payload: NDJSON formatted bulk operations
         """
         url = f"{self.endpoint}/{dataset}/json"
-        if not payload.endswith('\n'):
-            payload += '\n'
+        if not payload.endswith("\n"):
+            payload += "\n"
         response = self.request(
-            "POST", 
-            url,
-            headers={"Content-Type": "application/x-ndjson"},
-            body=payload
+            "POST", url, headers={"Content-Type": "application/x-ndjson"}, body=payload
         )
         return response
 
@@ -742,18 +811,14 @@ class InfinoSDK:
         return response
 
     @classmethod
-    def new(cls, access_key: str, secret_key: str, endpoint: str) -> 'InfinoSDK':
+    def new(cls, access_key: str, secret_key: str, endpoint: str) -> "InfinoSDK":
         """Convenience constructor"""
         return cls.new_with_retry(access_key, secret_key, endpoint, RetryConfig())
 
     @classmethod
     def new_with_retry(
-        cls,
-        access_key: str,
-        secret_key: str,
-        endpoint: str,
-        retry_config: RetryConfig
-    ) -> 'InfinoSDK':
+        cls, access_key: str, secret_key: str, endpoint: str, retry_config: RetryConfig
+    ) -> "InfinoSDK":
         """Constructor with custom retry config"""
         return cls(access_key, secret_key, endpoint, retry_config)
 
@@ -772,9 +837,13 @@ class InfinoSDK:
         response = self.request("GET", url)
         if isinstance(response, list):
             return response
-        raise InfinoError(InfinoError.Type.INVALID_REQUEST, "Expected list of connections")
+        raise InfinoError(
+            InfinoError.Type.INVALID_REQUEST, "Expected list of connections"
+        )
 
-    def create_connection(self, source_type: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def create_connection(
+        self, source_type: str, config: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Create data source connection"""
         url = f"{self.endpoint}/source/{source_type}"
         response = self.request("POST", url, None, json.dumps(config))
@@ -786,7 +855,9 @@ class InfinoSDK:
         response = self.request("GET", url)
         return response
 
-    def update_connection(self, connection_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def update_connection(
+        self, connection_id: str, config: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Update a data source connection"""
         url = f"{self.endpoint}/source/{connection_id}"
         response = self.request("PATCH", url, None, json.dumps(config))
@@ -799,7 +870,9 @@ class InfinoSDK:
         return response
 
     # Query Operations - Source Queries
-    def query_source(self, connection_id: str, dataset: str, query: str) -> Dict[str, Any]:
+    def query_source(
+        self, connection_id: str, dataset: str, query: str
+    ) -> Dict[str, Any]:
         """Query a data source connection in its native DSL"""
         url = f"{self.endpoint}/source/{connection_id}/{dataset}/dsl"
         response = self.request("GET", url, None, query)
@@ -812,7 +885,9 @@ class InfinoSDK:
         return response
 
     # Correlate Operations - Import Jobs
-    def create_import_job(self, source_type: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def create_import_job(
+        self, source_type: str, config: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Create import job from data source to a dataset"""
         url = f"{self.endpoint}/import/{source_type}"
         response = self.request("PUT", url, None, json.dumps(config))
@@ -841,7 +916,9 @@ class InfinoSDK:
             try:
                 yaml.safe_load(config)  # syntax validation only
             except Exception as e:
-                raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}")
+                raise InfinoError(
+                    InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}"
+                )
             headers = {"Content-Type": "application/yaml"}
             body = config
         else:
@@ -863,7 +940,9 @@ class InfinoSDK:
             try:
                 yaml.safe_load(config)
             except Exception as e:
-                raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}")
+                raise InfinoError(
+                    InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}"
+                )
             headers = {"Content-Type": "application/yaml"}
             body = config
         else:
@@ -891,7 +970,9 @@ class InfinoSDK:
             try:
                 yaml.safe_load(config)
             except Exception as e:
-                raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}")
+                raise InfinoError(
+                    InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}"
+                )
             headers = {"Content-Type": "application/yaml"}
             body = config
         else:
@@ -913,7 +994,9 @@ class InfinoSDK:
             try:
                 yaml.safe_load(config)
             except Exception as e:
-                raise InfinoError(InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}")
+                raise InfinoError(
+                    InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}"
+                )
             headers = {"Content-Type": "application/yaml"}
             body = config
         else:
@@ -953,34 +1036,32 @@ class InfinoSDK:
         response = self.request("PATCH", url)
         return response
 
+
 # Error conversion implementations
 def _convert_reqwest_error(error: requests.RequestException) -> InfinoError:
     """Convert requests error to InfinoError"""
-    return InfinoError(
-        error_type=InfinoError.Type.NETWORK,
-        message=str(error)
-    )
+    return InfinoError(error_type=InfinoError.Type.NETWORK, message=str(error))
+
 
 def _convert_json_error(error: json.JSONDecodeError) -> InfinoError:
     """Convert JSON error to InfinoError"""
-    return InfinoError(
-        error_type=InfinoError.Type.PARSE,
-        message=str(error)
-    )
+    return InfinoError(error_type=InfinoError.Type.PARSE, message=str(error))
+
 
 # Minimal demo tests
 if __name__ == "__main__":
     import unittest
+
     import responses
 
     class TestInfinoSDK(unittest.TestCase):
         """Basic tests for InfinoSDK"""
-        
+
         def setUp(self):
             self.client = InfinoSDK(
                 access_key="test_key",
                 secret_key="test_secret",
-                endpoint="http://localhost:8000"
+                endpoint="http://localhost:8000",
             )
 
         @responses.activate
@@ -992,12 +1073,14 @@ if __name__ == "__main__":
                 json={"hits": []},
                 status=200,
                 match=[
-                    responses.matchers.header_matcher({
-                        "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
-                        "x-amz-date": lambda x: len(x) == 16,  # YYYYMMDDTHHmmssZ
-                        "x-amz-content-sha256": lambda x: len(x) == 64
-                    })
-                ]
+                    responses.matchers.header_matcher(
+                        {
+                            "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
+                            "x-amz-date": lambda x: len(x) == 16,  # YYYYMMDDTHHmmssZ
+                            "x-amz-content-sha256": lambda x: len(x) == 64,
+                        }
+                    )
+                ],
             )
 
             query = json.dumps({"query": {"match_all": {}}})
@@ -1008,19 +1091,21 @@ if __name__ == "__main__":
         def test_document_operations(self):
             """Test document operations"""
             doc = json.dumps({"field1": "value1"})
-            
+
             responses.add(
                 responses.PUT,
                 "http://localhost:8000/test_dataset/doc/1",
                 json={"result": "created"},
                 status=200,
                 match=[
-                    responses.matchers.header_matcher({
-                        "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
-                        "x-amz-date": lambda x: len(x) == 16,
-                        "x-amz-content-sha256": lambda x: len(x) == 64
-                    })
-                ]
+                    responses.matchers.header_matcher(
+                        {
+                            "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
+                            "x-amz-date": lambda x: len(x) == 16,
+                            "x-amz-content-sha256": lambda x: len(x) == 64,
+                        }
+                    )
+                ],
             )
 
             # Note: dataset_record doesn't exist in Rust SDK, using bulk_ingest instead
@@ -1037,13 +1122,15 @@ if __name__ == "__main__":
                 json={"status": "OK", "message": "'test_role' created."},
                 status=200,
                 match=[
-                    responses.matchers.header_matcher({
-                        "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
-                        "x-amz-date": lambda x: len(x) == 16,
-                        "x-amz-content-sha256": lambda x: len(x) == 64,
-                        "content-type": "application/yaml"
-                    })
-                ]
+                    responses.matchers.header_matcher(
+                        {
+                            "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
+                            "x-amz-date": lambda x: len(x) == 16,
+                            "x-amz-content-sha256": lambda x: len(x) == 64,
+                            "content-type": "application/yaml",
+                        }
+                    )
+                ],
             )
 
             role_config = """
@@ -1068,13 +1155,15 @@ Permissions:
                 json={"status": "OK", "message": "'test_user' created."},
                 status=200,
                 match=[
-                    responses.matchers.header_matcher({
-                        "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
-                        "x-amz-date": lambda x: len(x) == 16,
-                        "x-amz-content-sha256": lambda x: len(x) == 64,
-                        "content-type": "application/yaml"
-                    })
-                ]
+                    responses.matchers.header_matcher(
+                        {
+                            "authorization": lambda x: x.startswith("AWS4-HMAC-SHA256"),
+                            "x-amz-date": lambda x: len(x) == 16,
+                            "x-amz-content-sha256": lambda x: len(x) == 64,
+                            "content-type": "application/yaml",
+                        }
+                    )
+                ],
             )
 
             user_config = """
@@ -1087,4 +1176,4 @@ Roles:
             response = self.client.create_user("test_user", user_config)
             self.assertEqual(response["status"], "OK")
 
-    unittest.main() 
+    unittest.main()
