@@ -32,8 +32,10 @@ def test_query_querydsl_not_found(sdk_with_mock_session, mock_response):
     """Test query with non-existent dataset"""
     sdk = sdk_with_mock_session
 
+
     response = mock_response(404, text="index_not_found_exception")
     sdk.session.request.return_value = response
+
 
     with pytest.raises(InfinoError) as exc_info:
         sdk.search("nonexistent", '{"query": {"match_all": {}}}')
@@ -41,7 +43,6 @@ def test_query_querydsl_not_found(sdk_with_mock_session, mock_response):
     assert exc_info.value.status_code() == 404
 
 
-@pytest.mark.unit
 # Test removed - search_ai not in public SDK
 
 
