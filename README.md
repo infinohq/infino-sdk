@@ -5,10 +5,10 @@
 
 Official Python SDK for [Infino](https://infino.ai) - the context engine for your data stack.
 
-**Infino** provides an intelligent unification layer for your data stack. Query Elasticsearch, OpenSearch, Snowflake, and 50+ sources in natural language, SQL, QueryDSL, or PromQL. Bring diverse data sources together for deeper analysis—no ETL required. Control access via fine-grained RBAC. All through one unified API. 
+**Infino** provides an intelligent unification layer for your data stack. Query Elasticsearch, OpenSearch, Snowflake, and other data sources in natural language, SQL, QueryDSL, or PromQL. Bring diverse data sources together for deeper analysis—no ETL required. Control access via fine-grained RBAC. All through one unified API. 
 
 **Built for**:
-- **Connect**: Access 50+ data sources without data movement
+- **Connect**: Access your data sources without data movement
 - **Query**: Natural language, SQL, Query DSL, and PromQL across all sources
 - **Correlate**: Pull together data from different sources for cross-source correlation
 - **Govern**: Fine-grained RBAC for your entire data stack
@@ -91,7 +91,7 @@ print(f"Found {len(results.get('hits', {}).get('hits', []))} records")
 
 ## API Reference
 
-Complete reference of all 51 SDK methods organized by category. Click any method to jump to its code example.
+Complete reference of SDK methods organized by category. Click any method to jump to its code example.
 
 ### Initialization & Utilities (5 methods)
 
