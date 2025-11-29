@@ -6,14 +6,11 @@ Based on patterns from infino/tests/api/python/src/utils/performance.py
 
 import json
 import time
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 from infino_sdk import InfinoError, InfinoSDK
-
-from unittest.mock import Mock, patch, MagicMock
-from infino_sdk import InfinoSDK, InfinoError
 
 
 class TestPromQLInstantQueries:
