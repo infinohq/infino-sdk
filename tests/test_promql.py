@@ -26,7 +26,7 @@ class TestPromQLInstantQueries:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -58,7 +58,7 @@ class TestPromQLInstantQueries:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -82,7 +82,7 @@ class TestPromQLInstantQueries:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -114,7 +114,7 @@ class TestPromQLRangeQueries:
         now = int(time.time() * 1000)
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "status": "success",
             "data": {
                 "resultType": "matrix",
@@ -155,7 +155,7 @@ class TestPromQLRangeQueries:
         now = int(time.time() * 1000)
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "status": "success",
             "data": {
                 "resultType": "matrix",
@@ -194,7 +194,7 @@ class TestPromQLRangeQueries:
         now = int(time.time() * 1000)
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "status": "success",
             "data": {
                 "resultType": "matrix",
@@ -244,7 +244,7 @@ class TestPromQLLabelSelectors:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -273,7 +273,7 @@ class TestPromQLLabelSelectors:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -306,7 +306,7 @@ class TestPromQLLabelSelectors:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -346,7 +346,7 @@ class TestPromQLArithmeticOperations:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -375,7 +375,7 @@ class TestPromQLArithmeticOperations:
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "status": "success",
             "data": {
                 "resultType": "vector",
@@ -402,7 +402,7 @@ class TestPromQLErrorHandling:
         # Mock error response
         mock_response = Mock()
         mock_response.status_code = 400
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "status": "error",
             "errorType": "bad_data",
             "error": "parse error: unexpected end of input",
@@ -422,7 +422,7 @@ class TestPromQLErrorHandling:
         # Mock timeout response
         mock_response = Mock()
         mock_response.status_code = 504
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "status": "error",
             "errorType": "timeout",
             "error": "query timeout",

@@ -19,11 +19,10 @@ class TestBasicSQLQueries:
         """Test simple SELECT query"""
         sdk, mock_requests = mock_sdk
 
-
         # Mock response
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "action", "type": "keyword"},
@@ -42,7 +41,6 @@ class TestBasicSQLQueries:
         query = "SELECT user_id, action, timestamp FROM logs.doc LIMIT 10"
         result = sdk.query_dataset_in_sql(query)
 
-
         # Verify
         assert result["total"] == 2
         assert len(result["rows"]) == 2
@@ -55,7 +53,7 @@ class TestBasicSQLQueries:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [{"name": "user_id", "type": "keyword"}],
             "rows": [["user_123"]],
             "total": 1,
@@ -75,7 +73,7 @@ class TestBasicSQLQueries:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [{"name": "count", "type": "long"}],
             "rows": [[1500]],
             "total": 1,
@@ -94,7 +92,7 @@ class TestBasicSQLQueries:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [{"name": "status", "type": "keyword"}],
             "rows": [["success"]],
             "total": 1,
@@ -117,7 +115,7 @@ class TestSQLAggregations:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "status", "type": "keyword"},
                 {"name": "count", "type": "long"},
@@ -145,7 +143,7 @@ class TestSQLAggregations:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "count", "type": "long"},
@@ -173,7 +171,7 @@ class TestSQLAggregations:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "avg_duration", "type": "double"},
                 {"name": "max_duration", "type": "long"},
@@ -211,7 +209,7 @@ class TestSQLTimeSeriesQueries:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "time_bucket", "type": "date"},
                 {"name": "count", "type": "long"},
@@ -247,7 +245,7 @@ class TestSQLTimeSeriesQueries:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [{"name": "count", "type": "long"}],
             "rows": [[250]],
             "total": 1,
@@ -271,7 +269,7 @@ class TestSQLTimeSeriesQueries:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "time_bucket", "type": "date"},
                 {"name": "value", "type": "double"},
@@ -319,7 +317,7 @@ class TestSQLJoins:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "user_name", "type": "text"},
@@ -347,7 +345,7 @@ class TestSQLJoins:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "user_name", "type": "text"},
@@ -382,7 +380,7 @@ class TestSQLSubqueries:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "total_actions", "type": "long"},
@@ -414,7 +412,7 @@ class TestSQLSubqueries:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "error_rate", "type": "double"},
@@ -455,7 +453,7 @@ class TestSQLCaseStatements:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "status_code", "type": "keyword"},
                 {"name": "category", "type": "keyword"},
@@ -495,7 +493,7 @@ class TestSQLCaseStatements:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "success_count", "type": "long"},
                 {"name": "error_count", "type": "long"},
@@ -561,7 +559,7 @@ class TestSQLErrorHandling:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [{"name": "user_id", "type": "keyword"}],
             "rows": [],
             "total": 0,
@@ -585,7 +583,7 @@ class TestSQLWindowFunctions:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "timestamp", "type": "date"},
@@ -620,7 +618,7 @@ class TestSQLWindowFunctions:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "user_id", "type": "keyword"},
                 {"name": "score", "type": "long"},
@@ -654,7 +652,7 @@ class TestSQLIndexTypes:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [{"name": "title", "type": "text"}],
             "rows": [["Test Document"]],
             "total": 1,
@@ -673,7 +671,7 @@ class TestSQLIndexTypes:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [
                 {"name": "metric_name", "type": "keyword"},
                 {"name": "avg_value", "type": "double"},
@@ -700,7 +698,7 @@ class TestSQLIndexTypes:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({
+        mock_response.json.return_value = {
             "columns": [{"name": "tag", "type": "keyword"}],
             "rows": [["important"], ["urgent"]],
             "total": 2,
