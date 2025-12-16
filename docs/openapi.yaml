@@ -16,8 +16,36 @@ info:
 
     ## Authentication
 
-    All API requests require AWS Signature Version 4 (SigV4) authentication.
-    See the `sigv4Auth` security scheme for details.
+    All API requests require **AWS Signature Version 4 (SigV4)** authentication.
+
+    ### Credentials Required
+    - **Access Key ID**: Your Infino access key (e.g., `IAK_EXAMPLE1234567890`)
+    - **Secret Access Key**: Your Infino secret key (used to sign requests, never transmitted)
+
+    ### Signing Process
+    1. **Create Canonical Request**: Combine HTTP method, path, query params, headers, and payload hash
+    2. **Create String to Sign**: Combine algorithm, timestamp, credential scope, and canonical request hash
+    3. **Derive Signing Key**: HMAC chain: `date → region → service → aws4_request`
+    4. **Calculate Signature**: `HMAC-SHA256(signing_key, string_to_sign)`
+
+    ### Required Headers
+    - `Authorization`: `AWS4-HMAC-SHA256 Credential=<access_key>/<date>/us-east-1/es/aws4_request, SignedHeaders=<headers>, Signature=<signature>`
+    - `x-amz-date`: Request timestamp in ISO8601 basic format (e.g., `20250115T103000Z`)
+    - `x-amz-content-sha256`: SHA256 hash of request payload (or `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` for empty body)
+    - `Host`: API hostname
+
+    ### Signing Constants
+    - **Algorithm**: `AWS4-HMAC-SHA256`
+    - **Service**: `es`
+    - **Region**: `us-east-1`
+    - **Termination**: `aws4_request`
+
+    ### Testing Tools
+    - **Infino Python SDK**: Handles signing automatically
+    - **Postman**: Use "AWS Signature" auth type with AccessKey, SecretKey, Region=`us-east-1`, Service=`es`
+    - **cURL**: Use `--aws-sigv4 "aws:amz:us-east-1:es"` with `--user "ACCESS_KEY:SECRET_KEY"`
+
+    **Reference**: [AWS SigV4 Documentation](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
 
   contact:
     name: Infino Support
@@ -27,11 +55,8 @@ info:
     url: https://www.apache.org/licenses/LICENSE-2.0
 
 servers:
-  - url: https://api.infino.ai
+  - url: https://api.infino.ws
     description: Production API
-
-security:
-  - sigv4Auth: []
 
 tags:
   - name: Utility
@@ -1524,45 +1549,6 @@ paths:
 # COMPONENTS
 # =============================================================================
 components:
-  securitySchemes:
-    sigv4Auth:
-      type: http
-      scheme: bearer
-      description: |
-        ## AWS Signature Version 4 (SigV4) Authentication
-
-        All API requests must be signed using AWS Signature Version 4.
-
-        ### Credentials Required
-        - **Access Key ID**: Your Infino access key (e.g., `AKIAIOSFODNN7EXAMPLE`)
-        - **Secret Access Key**: Your Infino secret key (used to sign requests, never transmitted)
-
-        ### Signing Process
-        1. **Create Canonical Request**: Combine HTTP method, path, query params, headers, and payload hash
-        2. **Create String to Sign**: Combine algorithm, timestamp, credential scope, and canonical request hash
-        3. **Derive Signing Key**: HMAC chain: `date → region → service → aws4_request`
-        4. **Calculate Signature**: `HMAC-SHA256(signing_key, string_to_sign)`
-
-        ### Required Headers
-        All requests must include:
-        - `Authorization`: `AWS4-HMAC-SHA256 Credential=<access_key>/<date>/us-east-1/es/aws4_request, SignedHeaders=<headers>, Signature=<signature>`
-        - `x-amz-date`: Request timestamp in ISO8601 basic format (e.g., `20250115T103000Z`)
-        - `x-amz-content-sha256`: SHA256 hash of request payload (or `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` for empty body)
-        - `Host`: API hostname
-
-        ### Signing Constants
-        - **Algorithm**: `AWS4-HMAC-SHA256`
-        - **Service**: `es`
-        - **Region**: `us-east-1`
-        - **Termination**: `aws4_request`
-
-        ### SDK Support
-        The Infino Python SDK handles signing automatically. For other languages,
-        use AWS SDK SigV4 signing libraries or implement manually.
-
-        **Reference**: [AWS SigV4 Documentation](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
-      x-amazon-apigateway-authtype: awsSigv4
-
   parameters:
     datasetPath:
       name: dataset
