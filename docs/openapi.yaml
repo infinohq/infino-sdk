@@ -1707,6 +1707,7 @@ components:
           type: array
           items:
             type: array
+            items: {}
         size:
           type: integer
         total:
