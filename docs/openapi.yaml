@@ -167,10 +167,12 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/QueryDSLRequest"
-            example:
-              query:
-                match:
-                  status: "deleted"
+            examples:
+              deleteByStatus:
+                value:
+                  query:
+                    match:
+                      status: "deleted"
       responses:
         "200":
           description: Records deleted successfully
@@ -230,11 +232,13 @@ paths:
   # =============================================================================
   /{dataset}/querydsl:
     get:
-      operationId: queryDatasetQueryDSL
-      summary: Query dataset with QueryDSL
+      operationId: queryDatasetQueryDSLGet
+      summary: Query dataset with QueryDSL (GET)
       description: |
         Query a dataset using Elasticsearch/OpenSearch Query DSL syntax.
         Supports full-text search, term queries, aggregations, and more.
+
+        Note: Both GET and POST are supported. POST is recommended for complex queries.
       tags:
         - Query
       parameters:
@@ -282,13 +286,55 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+    post:
+      operationId: queryDatasetQueryDSLPost
+      summary: Query dataset with QueryDSL (POST)
+      description: |
+        Query a dataset using Elasticsearch/OpenSearch Query DSL syntax.
+        Supports full-text search, term queries, aggregations, and more.
+
+        POST is the recommended method for queries with request bodies.
+      tags:
+        - Query
+      parameters:
+        - $ref: "#/components/parameters/datasetPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueryDSLRequest"
+            examples:
+              matchAll:
+                summary: Match all documents
+                value:
+                  query:
+                    match_all: {}
+      responses:
+        "200":
+          description: Query results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryDSLResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /sql:
     get:
-      operationId: queryDatasetSQL
-      summary: Query with SQL (read)
+      operationId: queryDatasetSQLGet
+      summary: Query with SQL (GET)
       description: |
         Query one or more datasets using SQL syntax.
         Supports SELECT, JOIN, aggregations, and cross-dataset queries.
+
+        Note: Both GET and POST are supported. POST is recommended for complex queries.
       tags:
         - Query
       requestBody:
@@ -297,8 +343,10 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/SQLRequest"
-            example:
-              query: "SELECT * FROM my_dataset WHERE status = 'active' LIMIT 10"
+            examples:
+              selectQuery:
+                value:
+                  query: "SELECT * FROM my_dataset WHERE status = 'active' LIMIT 10"
       responses:
         "200":
           description: Query results
@@ -314,11 +362,18 @@ paths:
           $ref: "#/components/responses/InternalError"
 
     post:
-      operationId: upsertDatasetSQL
-      summary: Upsert with SQL
+      operationId: queryDatasetSQLPost
+      summary: Query or upsert with SQL (POST)
       description: |
-        Insert or update records in a dataset using SQL UPSERT syntax.
+        Execute SQL queries or upserts against datasets.
+
+        **Read queries**: SELECT, JOIN, aggregations, cross-dataset queries.
+        **Write queries**: UPSERT, INSERT operations.
+
+        The operation type is determined by the SQL query content.
+        POST is the recommended method for queries with request bodies.
       tags:
+        - Query
         - Bulk Operations
       requestBody:
         required: true
@@ -326,11 +381,18 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/SQLRequest"
-            example:
-              query: "UPSERT INTO my_dataset (id, name, value) VALUES ('1', 'test', 100)"
+            examples:
+              selectQuery:
+                summary: SELECT query (read)
+                value:
+                  query: "SELECT * FROM my_dataset WHERE status = 'active' LIMIT 10"
+              upsertQuery:
+                summary: UPSERT query (write)
+                value:
+                  query: "UPSERT INTO my_dataset (id, name, value) VALUES ('1', 'test', 100)"
       responses:
         "200":
-          description: Upsert successful
+          description: Query results or upsert acknowledgment
           content:
             application/json:
               schema:
@@ -363,7 +425,8 @@ paths:
                 query:
                   type: string
                   description: PromQL query expression
-                  example: "up{job='prometheus'}"
+                  examples:
+                    - "up{job='prometheus'}"
                 index:
                   type: string
                   description: Optional dataset name to query
@@ -405,19 +468,23 @@ paths:
                 query:
                   type: string
                   description: PromQL query expression
-                  example: "rate(http_requests_total[5m])"
+                  examples:
+                    - "rate(http_requests_total[5m])"
                 start:
                   type: integer
                   description: Start timestamp (Unix seconds)
-                  example: 1609459200
+                  examples:
+                    - 1609459200
                 end:
                   type: integer
                   description: End timestamp (Unix seconds)
-                  example: 1609545600
+                  examples:
+                    - 1609545600
                 step:
                   type: integer
                   description: Query resolution step (seconds)
-                  example: 60
+                  examples:
+                    - 60
                 index:
                   type: string
                   description: Optional dataset name to query
@@ -490,11 +557,13 @@ paths:
               description: |
                 Newline-delimited JSON with alternating action and document lines.
                 Supported actions: index, update, delete
-            example: |
-              {"index": {"_id": "1"}}
-              {"name": "Product 1", "price": 29.99}
-              {"index": {"_id": "2"}}
-              {"name": "Product 2", "price": 49.99}
+            examples:
+              bulkUpload:
+                value: |
+                  {"index": {"_id": "1"}}
+                  {"name": "Product 1", "price": 29.99}
+                  {"index": {"_id": "2"}}
+                  {"name": "Product 2", "price": 49.99}
       responses:
         "200":
           description: Bulk operation completed
@@ -839,13 +908,15 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ConnectionConfig"
-            example:
-              host: "localhost"
-              port: 9200
-              auth:
-                type: "basic"
-                username: "admin"
-                password: "secret"
+            examples:
+              basicAuth:
+                value:
+                  host: "localhost"
+                  port: 9200
+                  auth:
+                    type: "basic"
+                    username: "admin"
+                    password: "secret"
       responses:
         "200":
           description: Connection created
@@ -937,9 +1008,47 @@ paths:
 
   /source/{connection_id}/{dataset}/dsl:
     get:
-      operationId: querySource
-      summary: Query external source
-      description: Query a data source connection using its native DSL
+      operationId: querySourceGet
+      summary: Query external source (GET)
+      description: |
+        Query a data source connection using its native DSL.
+
+        Note: Both GET and POST are supported. POST is recommended for complex queries.
+      tags:
+        - Connections
+      parameters:
+        - $ref: "#/components/parameters/connectionIdPath"
+        - $ref: "#/components/parameters/datasetPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Native DSL query for the source type
+      responses:
+        "200":
+          description: Query results
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    post:
+      operationId: querySourcePost
+      summary: Query external source (POST)
+      description: |
+        Query a data source connection using its native DSL.
+
+        POST is the recommended method for queries with request bodies.
       tags:
         - Connections
       parameters:
@@ -1015,10 +1124,12 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ImportJobConfig"
-            example:
-              source_id: "conn-123"
-              target_dataset: "my_dataset"
-              schedule: "0 * * * *"
+            examples:
+              hourlyImport:
+                value:
+                  source_id: "conn-123"
+                  target_dataset: "my_dataset"
+                  schedule: "0 * * * *"
       responses:
         "200":
           description: Import job created
@@ -1141,9 +1252,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusResponse"
-              example:
-                status: "OK"
-                message: "'username' created."
+              examples:
+                userCreated:
+                  value:
+                    status: "OK"
+                    message: "'username' created."
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1318,9 +1431,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusResponse"
-              example:
-                status: "OK"
-                message: "'rolename' created."
+              examples:
+                roleCreated:
+                  value:
+                    status: "OK"
+                    message: "'rolename' created."
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1457,7 +1572,8 @@ components:
       schema:
         type: string
         pattern: "^[a-z0-9][a-z0-9\\-\\.]*$"
-        example: "my-dataset"
+        examples:
+          - "my-dataset"
 
     threadIdPath:
       name: thread_id
@@ -1498,11 +1614,13 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
-          example:
-            error:
-              type: "unauthorized"
-              reason: "Invalid signature"
-            status: 401
+          examples:
+            invalidSignature:
+              value:
+                error:
+                  type: "unauthorized"
+                  reason: "Invalid signature"
+                status: 401
 
     NotFound:
       description: Resource not found
@@ -1543,14 +1661,16 @@ components:
       properties:
         acknowledged:
           type: boolean
-          example: true
+          examples:
+            - true
 
     StatusResponse:
       type: object
       properties:
         status:
           type: string
-          example: "OK"
+          examples:
+            - "OK"
         message:
           type: string
 
@@ -1559,7 +1679,8 @@ components:
       properties:
         status:
           type: string
-          example: "healthy"
+          examples:
+            - "healthy"
         version:
           type: string
 
@@ -1658,8 +1779,9 @@ components:
                 relation:
                   type: string
             max_score:
-              type: number
-              nullable: true
+              type:
+                - number
+                - "null"
             hits:
               type: array
               items:
@@ -1676,8 +1798,9 @@ components:
         _id:
           type: string
         _score:
-          type: number
-          nullable: true
+          type:
+            - number
+            - "null"
         _source:
           type: object
 
@@ -1689,7 +1812,8 @@ components:
         query:
           type: string
           description: SQL query string
-          example: "SELECT * FROM my_dataset LIMIT 10"
+          examples:
+            - "SELECT * FROM my_dataset LIMIT 10"
 
     SQLResponse:
       type: object
@@ -1949,7 +2073,8 @@ components:
       properties:
         Version:
           type: string
-          example: "2025-01-01"
+          examples:
+            - "2025-01-01"
         Password:
           type: string
           format: password
@@ -1988,7 +2113,8 @@ components:
       properties:
         Version:
           type: string
-          example: "2025-01-01"
+          examples:
+            - "2025-01-01"
         Permissions:
           type: array
           items:
