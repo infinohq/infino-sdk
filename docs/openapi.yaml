@@ -1,0 +1,2051 @@
+openapi: 3.1.0
+info:
+  title: Infino API
+  version: "2025-01-01"
+  description: |
+    Infino is a context engine that provides an intelligent unification layer for data stacks.
+    Query 50+ data sources (Elasticsearch, OpenSearch, Snowflake, etc.) in natural language,
+    SQL, QueryDSL, or PromQL through a single unified API.
+
+    ## Core Capabilities
+
+    - **Connect**: Access data sources without data movement
+    - **Query**: Multiple query interfaces (Natural Language via Fino AI, SQL, Query DSL, PromQL)
+    - **Correlate**: Cross-source data correlation via datasets
+    - **Govern**: Fine-grained RBAC for humans and agents
+
+    ## Authentication
+
+    All API requests require AWS Signature Version 4 (SigV4) authentication.
+    See the `sigv4Auth` security scheme for details.
+
+  contact:
+    name: Infino Support
+    url: https://infino.ai
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: https://api.infino.ai
+    description: Production API
+
+security:
+  - sigv4Auth: []
+
+tags:
+  - name: Utility
+    description: Health check and utility endpoints
+  - name: Datasets
+    description: Create, delete, and manage datasets
+  - name: Query
+    description: Query data using SQL, QueryDSL, or PromQL
+  - name: Records
+    description: Single record operations
+  - name: Bulk Operations
+    description: Bulk data upload and manipulation
+  - name: Fino AI
+    description: Natural language queries via Fino
+  - name: Connections
+    description: External data source connections
+  - name: Import Jobs
+    description: Data import job management
+  - name: Users
+    description: User management (RBAC)
+  - name: Roles
+    description: Role management (RBAC)
+  - name: Security
+    description: API key rotation and security
+
+paths:
+  # =============================================================================
+  # UTILITY
+  # =============================================================================
+  /:
+    get:
+      operationId: ping
+      summary: Health check
+      description: Check if the API is healthy and get version information
+      tags:
+        - Utility
+      responses:
+        "200":
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # =============================================================================
+  # DATASETS
+  # =============================================================================
+  /metadata:
+    get:
+      operationId: listDatasets
+      summary: List all datasets
+      description: Query Infino for metadata on all current datasets
+      tags:
+        - Datasets
+      responses:
+        "200":
+          description: List of dataset metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DatasetMetadata"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /{dataset}:
+    put:
+      operationId: createDataset
+      summary: Create a dataset
+      description: Create an empty dataset. Returns success even if dataset already exists (409 is treated as success).
+      tags:
+        - Datasets
+      parameters:
+        - $ref: "#/components/parameters/datasetPath"
+      responses:
+        "200":
+          description: Dataset created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetCreatedResponse"
+        "409":
+          description: Dataset already exists (treated as success)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetCreatedResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      operationId: deleteDataset
+      summary: Delete a dataset
+      description: Delete a dataset and all its records
+      tags:
+        - Datasets
+      parameters:
+        - $ref: "#/components/parameters/datasetPath"
+      responses:
+        "200":
+          description: Dataset deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcknowledgedResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      operationId: deleteRecords
+      summary: Delete records by query
+      description: Delete records from a dataset matching the provided QueryDSL query
+      tags:
+        - Bulk Operations
+      parameters:
+        - $ref: "#/components/parameters/datasetPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueryDSLRequest"
+            example:
+              query:
+                match:
+                  status: "deleted"
+      responses:
+        "200":
+          description: Records deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteByQueryResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /{dataset}/metadata:
+    get:
+      operationId: getDatasetMetadata
+      summary: Get dataset metadata
+      description: Query a dataset for its metadata (status, health, document count, etc.)
+      tags:
+        - Datasets
+      parameters:
+        - $ref: "#/components/parameters/datasetPath"
+      responses:
+        "200":
+          description: Dataset metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetMetadata"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /{dataset}/schema:
+    head:
+      operationId: getDatasetSchema
+      summary: Get dataset schema
+      description: Query a dataset for its schema (field mappings)
+      tags:
+        - Datasets
+      parameters:
+        - $ref: "#/components/parameters/datasetPath"
+      responses:
+        "200":
+          description: Schema exists
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # =============================================================================
+  # QUERY OPERATIONS
+  # =============================================================================
+  /{dataset}/querydsl:
+    get:
+      operationId: queryDatasetQueryDSL
+      summary: Query dataset with QueryDSL
+      description: |
+        Query a dataset using Elasticsearch/OpenSearch Query DSL syntax.
+        Supports full-text search, term queries, aggregations, and more.
+      tags:
+        - Query
+      parameters:
+        - $ref: "#/components/parameters/datasetPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueryDSLRequest"
+            examples:
+              matchAll:
+                summary: Match all documents
+                value:
+                  query:
+                    match_all: {}
+              termQuery:
+                summary: Term query
+                value:
+                  query:
+                    term:
+                      status: "active"
+              aggregation:
+                summary: With aggregation
+                value:
+                  query:
+                    match_all: {}
+                  aggs:
+                    status_count:
+                      terms:
+                        field: status
+      responses:
+        "200":
+          description: Query results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryDSLResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /sql:
+    get:
+      operationId: queryDatasetSQL
+      summary: Query with SQL (read)
+      description: |
+        Query one or more datasets using SQL syntax.
+        Supports SELECT, JOIN, aggregations, and cross-dataset queries.
+      tags:
+        - Query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SQLRequest"
+            example:
+              query: "SELECT * FROM my_dataset WHERE status = 'active' LIMIT 10"
+      responses:
+        "200":
+          description: Query results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SQLResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    post:
+      operationId: upsertDatasetSQL
+      summary: Upsert with SQL
+      description: |
+        Insert or update records in a dataset using SQL UPSERT syntax.
+      tags:
+        - Bulk Operations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SQLRequest"
+            example:
+              query: "UPSERT INTO my_dataset (id, name, value) VALUES ('1', 'test', 100)"
+      responses:
+        "200":
+          description: Upsert successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SQLResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /promql/query:
+    post:
+      operationId: queryPromQLInstant
+      summary: PromQL instant query
+      description: |
+        Query time-series data using PromQL (Prometheus Query Language).
+        Returns instant vector results for the current time or specified timestamp.
+      tags:
+        - Query
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - query
+              properties:
+                query:
+                  type: string
+                  description: PromQL query expression
+                  example: "up{job='prometheus'}"
+                index:
+                  type: string
+                  description: Optional dataset name to query
+      responses:
+        "200":
+          description: Query results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromQLResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /promql/query_range:
+    post:
+      operationId: queryPromQLRange
+      summary: PromQL range query
+      description: |
+        Query time-series data using PromQL with a time range.
+        Returns matrix results for the specified time range and step interval.
+      tags:
+        - Query
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - query
+                - start
+                - end
+                - step
+              properties:
+                query:
+                  type: string
+                  description: PromQL query expression
+                  example: "rate(http_requests_total[5m])"
+                start:
+                  type: integer
+                  description: Start timestamp (Unix seconds)
+                  example: 1609459200
+                end:
+                  type: integer
+                  description: End timestamp (Unix seconds)
+                  example: 1609545600
+                step:
+                  type: integer
+                  description: Query resolution step (seconds)
+                  example: 60
+                index:
+                  type: string
+                  description: Optional dataset name to query
+      responses:
+        "200":
+          description: Query results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromQLResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # =============================================================================
+  # RECORDS
+  # =============================================================================
+  /{dataset}/doc/{record_id}:
+    get:
+      operationId: getRecord
+      summary: Get a single record
+      description: Retrieve a single record from a dataset by its ID
+      tags:
+        - Records
+      parameters:
+        - $ref: "#/components/parameters/datasetPath"
+        - name: record_id
+          in: path
+          required: true
+          description: Record identifier
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Record found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # =============================================================================
+  # BULK OPERATIONS
+  # =============================================================================
+  /{dataset}/json:
+    post:
+      operationId: uploadJSON
+      summary: Bulk upload JSON records
+      description: |
+        Upload records to a dataset in NDJSON (newline-delimited JSON) format.
+        Uses Elasticsearch bulk API format with action lines and document lines.
+      tags:
+        - Bulk Operations
+      parameters:
+        - $ref: "#/components/parameters/datasetPath"
+      requestBody:
+        required: true
+        content:
+          application/x-ndjson:
+            schema:
+              type: string
+              description: |
+                Newline-delimited JSON with alternating action and document lines.
+                Supported actions: index, update, delete
+            example: |
+              {"index": {"_id": "1"}}
+              {"name": "Product 1", "price": 29.99}
+              {"index": {"_id": "2"}}
+              {"name": "Product 2", "price": 49.99}
+      responses:
+        "200":
+          description: Bulk operation completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /{dataset}/metrics:
+    post:
+      operationId: uploadMetrics
+      summary: Upload Prometheus metrics
+      description: Upload Prometheus-format metrics to a dataset
+      tags:
+        - Bulk Operations
+      parameters:
+        - $ref: "#/components/parameters/datasetPath"
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: string
+              description: Prometheus metrics format
+      responses:
+        "200":
+          description: Metrics uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /{dataset}/enrich_dataset:
+    post:
+      operationId: enrichDataset
+      summary: Enrich dataset
+      description: Update enrichment policy for a dataset
+      tags:
+        - Bulk Operations
+      parameters:
+        - $ref: "#/components/parameters/datasetPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Enrichment policy configuration
+      responses:
+        "200":
+          description: Enrichment policy updated
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # =============================================================================
+  # FINO AI
+  # =============================================================================
+  /fino/threads:
+    get:
+      operationId: listThreads
+      summary: List Fino threads
+      description: List all Fino conversation threads
+      tags:
+        - Fino AI
+      responses:
+        "200":
+          description: List of threads
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Thread"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    post:
+      operationId: createThread
+      summary: Create a Fino thread
+      description: Create a new Fino conversation thread
+      tags:
+        - Fino AI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ThreadConfig"
+      responses:
+        "200":
+          description: Thread created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Thread"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /fino/threads/{thread_id}:
+    get:
+      operationId: getThread
+      summary: Get a Fino thread
+      description: Retrieve a specific Fino conversation thread
+      tags:
+        - Fino AI
+      parameters:
+        - $ref: "#/components/parameters/threadIdPath"
+      responses:
+        "200":
+          description: Thread details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Thread"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      operationId: updateThread
+      summary: Update a Fino thread
+      description: Update a Fino conversation thread
+      tags:
+        - Fino AI
+      parameters:
+        - $ref: "#/components/parameters/threadIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ThreadConfig"
+      responses:
+        "200":
+          description: Thread updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Thread"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      operationId: deleteThread
+      summary: Delete a Fino thread
+      description: Delete a Fino conversation thread
+      tags:
+        - Fino AI
+      parameters:
+        - $ref: "#/components/parameters/threadIdPath"
+      responses:
+        "200":
+          description: Thread deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcknowledgedResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /fino/threads/{thread_id}/messages:
+    post:
+      operationId: addThreadMessage
+      summary: Add message to thread
+      description: Add a message to a specific Fino thread
+      tags:
+        - Fino AI
+      parameters:
+        - $ref: "#/components/parameters/threadIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ThreadMessage"
+      responses:
+        "200":
+          description: Message added
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      operationId: clearThreadMessages
+      summary: Clear thread messages
+      description: Remove all messages from a Fino thread
+      tags:
+        - Fino AI
+      parameters:
+        - $ref: "#/components/parameters/threadIdPath"
+      responses:
+        "200":
+          description: Messages cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcknowledgedResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /fino/message:
+    post:
+      operationId: sendMessage
+      summary: Send message (simplified)
+      description: Send a message to Fino using the simplified API
+      tags:
+        - Fino AI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinoMessagePayload"
+      responses:
+        "200":
+          description: Message response
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # =============================================================================
+  # CONNECTIONS
+  # =============================================================================
+  /sources:
+    get:
+      operationId: listSources
+      summary: List available sources
+      description: Get a list of available data source types
+      tags:
+        - Connections
+      responses:
+        "200":
+          description: List of available source types
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SourceType"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /sources/connections:
+    get:
+      operationId: listConnections
+      summary: List active connections
+      description: Get a list of active data source connections
+      tags:
+        - Connections
+      responses:
+        "200":
+          description: List of connections
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Connection"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /source/{source_type}:
+    post:
+      operationId: createConnection
+      summary: Create a connection
+      description: Create a new data source connection
+      tags:
+        - Connections
+      parameters:
+        - name: source_type
+          in: path
+          required: true
+          description: Type of data source (e.g., elasticsearch, snowflake, postgres)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectionConfig"
+            example:
+              host: "localhost"
+              port: 9200
+              auth:
+                type: "basic"
+                username: "admin"
+                password: "secret"
+      responses:
+        "200":
+          description: Connection created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /source/{connection_id}:
+    get:
+      operationId: getConnection
+      summary: Get connection details
+      description: Get status of a data source connection
+      tags:
+        - Connections
+      parameters:
+        - $ref: "#/components/parameters/connectionIdPath"
+      responses:
+        "200":
+          description: Connection details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      operationId: updateConnection
+      summary: Update a connection
+      description: Update a data source connection
+      tags:
+        - Connections
+      parameters:
+        - $ref: "#/components/parameters/connectionIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectionConfig"
+      responses:
+        "200":
+          description: Connection updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      operationId: deleteConnection
+      summary: Delete a connection
+      description: Remove a data source connection
+      tags:
+        - Connections
+      parameters:
+        - $ref: "#/components/parameters/connectionIdPath"
+      responses:
+        "200":
+          description: Connection deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcknowledgedResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /source/{connection_id}/{dataset}/dsl:
+    get:
+      operationId: querySource
+      summary: Query external source
+      description: Query a data source connection using its native DSL
+      tags:
+        - Connections
+      parameters:
+        - $ref: "#/components/parameters/connectionIdPath"
+        - $ref: "#/components/parameters/datasetPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Native DSL query for the source type
+      responses:
+        "200":
+          description: Query results
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /source/{connection_id}/{dataset}/metadata:
+    get:
+      operationId: getSourceMetadata
+      summary: Get source metadata
+      description: Get metadata from a data source connection
+      tags:
+        - Connections
+      parameters:
+        - $ref: "#/components/parameters/connectionIdPath"
+        - $ref: "#/components/parameters/datasetPath"
+      responses:
+        "200":
+          description: Source metadata
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # =============================================================================
+  # IMPORT JOBS
+  # =============================================================================
+  /import/{source_type}:
+    put:
+      operationId: createImportJob
+      summary: Create import job
+      description: Create an import job from a data source to a dataset
+      tags:
+        - Import Jobs
+      parameters:
+        - name: source_type
+          in: path
+          required: true
+          description: Type of data source
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportJobConfig"
+            example:
+              source_id: "conn-123"
+              target_dataset: "my_dataset"
+              schedule: "0 * * * *"
+      responses:
+        "200":
+          description: Import job created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /import/jobs:
+    get:
+      operationId: listImportJobs
+      summary: List import jobs
+      description: Get all import job statuses
+      tags:
+        - Import Jobs
+      responses:
+        "200":
+          description: List of import jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ImportJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /import/jobs/{job_id}:
+    delete:
+      operationId: deleteImportJob
+      summary: Delete import job
+      description: Delete an import job
+      tags:
+        - Import Jobs
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Import job identifier
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Import job deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcknowledgedResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # =============================================================================
+  # USERS (RBAC)
+  # =============================================================================
+  /users:
+    get:
+      operationId: listUsers
+      summary: List users
+      description: List all users in your account
+      tags:
+        - Users
+      responses:
+        "200":
+          description: Dictionary of users
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /user/{name}:
+    put:
+      operationId: createUser
+      summary: Create a user
+      description: |
+        Create a user in your account. Accepts YAML or JSON configuration.
+
+        YAML format:
+        ```yaml
+        Version: 2025-01-01
+        Password: SecurePassword123!
+        Roles:
+          - role-name-1
+          - role-name-2
+        ```
+      tags:
+        - Users
+      parameters:
+        - $ref: "#/components/parameters/namePath"
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              $ref: "#/components/schemas/UserConfigYAML"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserConfig"
+      responses:
+        "200":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+              example:
+                status: "OK"
+                message: "'username' created."
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      operationId: getUser
+      summary: Get user details
+      description: Get details for a user in your account
+      tags:
+        - Users
+      parameters:
+        - $ref: "#/components/parameters/namePath"
+      responses:
+        "200":
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      operationId: updateUser
+      summary: Update a user
+      description: Update a user in your account
+      tags:
+        - Users
+      parameters:
+        - $ref: "#/components/parameters/namePath"
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              $ref: "#/components/schemas/UserConfigYAML"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserConfig"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      operationId: deleteUser
+      summary: Delete a user
+      description: Delete a user from your account
+      tags:
+        - Users
+      parameters:
+        - $ref: "#/components/parameters/namePath"
+      responses:
+        "200":
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcknowledgedResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /user/{username}/keys:
+    patch:
+      operationId: rotateKeys
+      summary: Rotate API keys
+      description: Rotate API keys for a user. Returns new access key and secret key.
+      tags:
+        - Security
+      parameters:
+        - name: username
+          in: path
+          required: true
+          description: Username whose keys to rotate
+          schema:
+            type: string
+      responses:
+        "200":
+          description: New credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credentials"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # =============================================================================
+  # ROLES (RBAC)
+  # =============================================================================
+  /roles:
+    get:
+      operationId: listRoles
+      summary: List roles
+      description: List all roles in your account
+      tags:
+        - Roles
+      responses:
+        "200":
+          description: Dictionary of roles
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: "#/components/schemas/Role"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /role/{name}:
+    put:
+      operationId: createRole
+      summary: Create a role
+      description: |
+        Create a role in your account. Accepts YAML or JSON configuration.
+
+        YAML format:
+        ```yaml
+        Version: 2025-01-01
+        Permissions:
+          - ResourceType: record
+            Actions: [read, write]
+            Resources: ["dataset-*"]
+            Fields:
+              Allow: ["field1", "field2"]
+              Deny: ["sensitive_field"]
+        ```
+      tags:
+        - Roles
+      parameters:
+        - $ref: "#/components/parameters/namePath"
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              $ref: "#/components/schemas/RoleConfigYAML"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleConfig"
+      responses:
+        "200":
+          description: Role created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+              example:
+                status: "OK"
+                message: "'rolename' created."
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      operationId: getRole
+      summary: Get role details
+      description: Get details for a role in your account
+      tags:
+        - Roles
+      parameters:
+        - $ref: "#/components/parameters/namePath"
+      responses:
+        "200":
+          description: Role details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      operationId: updateRole
+      summary: Update a role
+      description: Update a role in your account
+      tags:
+        - Roles
+      parameters:
+        - $ref: "#/components/parameters/namePath"
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              $ref: "#/components/schemas/RoleConfigYAML"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleConfig"
+      responses:
+        "200":
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      operationId: deleteRole
+      summary: Delete a role
+      description: Delete a role from your account
+      tags:
+        - Roles
+      parameters:
+        - $ref: "#/components/parameters/namePath"
+      responses:
+        "200":
+          description: Role deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcknowledgedResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+# =============================================================================
+# COMPONENTS
+# =============================================================================
+components:
+  securitySchemes:
+    sigv4Auth:
+      type: http
+      scheme: bearer
+      description: |
+        ## AWS Signature Version 4 (SigV4) Authentication
+
+        All API requests must be signed using AWS Signature Version 4.
+
+        ### Credentials Required
+        - **Access Key ID**: Your Infino access key (e.g., `AKIAIOSFODNN7EXAMPLE`)
+        - **Secret Access Key**: Your Infino secret key (used to sign requests, never transmitted)
+
+        ### Signing Process
+        1. **Create Canonical Request**: Combine HTTP method, path, query params, headers, and payload hash
+        2. **Create String to Sign**: Combine algorithm, timestamp, credential scope, and canonical request hash
+        3. **Derive Signing Key**: HMAC chain: `date → region → service → aws4_request`
+        4. **Calculate Signature**: `HMAC-SHA256(signing_key, string_to_sign)`
+
+        ### Required Headers
+        All requests must include:
+        - `Authorization`: `AWS4-HMAC-SHA256 Credential=<access_key>/<date>/us-east-1/es/aws4_request, SignedHeaders=<headers>, Signature=<signature>`
+        - `x-amz-date`: Request timestamp in ISO8601 basic format (e.g., `20250115T103000Z`)
+        - `x-amz-content-sha256`: SHA256 hash of request payload (or `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` for empty body)
+        - `Host`: API hostname
+
+        ### Signing Constants
+        - **Algorithm**: `AWS4-HMAC-SHA256`
+        - **Service**: `es`
+        - **Region**: `us-east-1`
+        - **Termination**: `aws4_request`
+
+        ### SDK Support
+        The Infino Python SDK handles signing automatically. For other languages,
+        use AWS SDK SigV4 signing libraries or implement manually.
+
+        **Reference**: [AWS SigV4 Documentation](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_aws-signing.html)
+      x-amazon-apigateway-authtype: awsSigv4
+
+  parameters:
+    datasetPath:
+      name: dataset
+      in: path
+      required: true
+      description: Dataset name
+      schema:
+        type: string
+        pattern: "^[a-z0-9][a-z0-9\\-\\.]*$"
+        example: "my-dataset"
+
+    threadIdPath:
+      name: thread_id
+      in: path
+      required: true
+      description: Fino thread identifier
+      schema:
+        type: string
+        format: uuid
+
+    connectionIdPath:
+      name: connection_id
+      in: path
+      required: true
+      description: Connection identifier
+      schema:
+        type: string
+
+    namePath:
+      name: name
+      in: path
+      required: true
+      description: Resource name (user or role)
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid input
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    Unauthorized:
+      description: Unauthorized - authentication failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              type: "unauthorized"
+              reason: "Invalid signature"
+            status: 401
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    # ---------------------------------------------------------------------------
+    # Common Schemas
+    # ---------------------------------------------------------------------------
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            type:
+              type: string
+              description: Error type identifier
+            reason:
+              type: string
+              description: Human-readable error message
+        status:
+          type: integer
+          description: HTTP status code
+
+    AcknowledgedResponse:
+      type: object
+      properties:
+        acknowledged:
+          type: boolean
+          example: true
+
+    StatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "OK"
+        message:
+          type: string
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "healthy"
+        version:
+          type: string
+
+    # ---------------------------------------------------------------------------
+    # Dataset Schemas
+    # ---------------------------------------------------------------------------
+    DatasetMetadata:
+      type: object
+      properties:
+        index:
+          type: string
+          description: Dataset name
+        status:
+          type: string
+          enum: [green, yellow, red]
+        health:
+          type: string
+        docs_count:
+          type: integer
+        store_size:
+          type: string
+        creation_date:
+          type: string
+          format: date-time
+
+    DatasetCreatedResponse:
+      type: object
+      properties:
+        acknowledged:
+          type: boolean
+        shards_acknowledged:
+          type: boolean
+        index:
+          type: string
+
+    # ---------------------------------------------------------------------------
+    # Query Schemas
+    # ---------------------------------------------------------------------------
+    QueryDSLRequest:
+      type: object
+      description: Elasticsearch/OpenSearch Query DSL
+      properties:
+        query:
+          type: object
+          description: Query clause
+        aggs:
+          type: object
+          description: Aggregations
+        size:
+          type: integer
+          description: Number of results to return
+        from:
+          type: integer
+          description: Offset for pagination
+        sort:
+          type: array
+          description: Sort criteria
+          items:
+            type: object
+        _source:
+          description: Source filtering
+          oneOf:
+            - type: boolean
+            - type: array
+              items:
+                type: string
+            - type: object
+
+    QueryDSLResponse:
+      type: object
+      properties:
+        took:
+          type: integer
+          description: Time in milliseconds
+        timed_out:
+          type: boolean
+        _shards:
+          type: object
+          properties:
+            total:
+              type: integer
+            successful:
+              type: integer
+            skipped:
+              type: integer
+            failed:
+              type: integer
+        hits:
+          type: object
+          properties:
+            total:
+              type: object
+              properties:
+                value:
+                  type: integer
+                relation:
+                  type: string
+            max_score:
+              type: number
+              nullable: true
+            hits:
+              type: array
+              items:
+                $ref: "#/components/schemas/DocumentHit"
+        aggregations:
+          type: object
+          description: Aggregation results
+
+    DocumentHit:
+      type: object
+      properties:
+        _index:
+          type: string
+        _id:
+          type: string
+        _score:
+          type: number
+          nullable: true
+        _source:
+          type: object
+
+    SQLRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: SQL query string
+          example: "SELECT * FROM my_dataset LIMIT 10"
+
+    SQLResponse:
+      type: object
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              type:
+                type: string
+        rows:
+          type: array
+          items:
+            type: array
+        size:
+          type: integer
+        total:
+          type: integer
+
+    PromQLResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+        data:
+          type: object
+          properties:
+            resultType:
+              type: string
+              enum: [vector, matrix, scalar, string]
+            result:
+              type: array
+              items:
+                type: object
+        errorType:
+          type: string
+        error:
+          type: string
+
+    # ---------------------------------------------------------------------------
+    # Document Schemas
+    # ---------------------------------------------------------------------------
+    DocumentResponse:
+      type: object
+      properties:
+        _index:
+          type: string
+        _id:
+          type: string
+        _version:
+          type: integer
+        _seq_no:
+          type: integer
+        _primary_term:
+          type: integer
+        found:
+          type: boolean
+        _source:
+          type: object
+
+    BulkResponse:
+      type: object
+      properties:
+        took:
+          type: integer
+        errors:
+          type: boolean
+        items:
+          type: array
+          items:
+            type: object
+
+    DeleteByQueryResponse:
+      type: object
+      properties:
+        took:
+          type: integer
+        timed_out:
+          type: boolean
+        total:
+          type: integer
+        deleted:
+          type: integer
+        failures:
+          type: array
+          items:
+            type: object
+
+    # ---------------------------------------------------------------------------
+    # Fino AI Schemas
+    # ---------------------------------------------------------------------------
+    Thread:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ThreadMessage"
+
+    ThreadConfig:
+      type: object
+      properties:
+        metadata:
+          type: object
+          description: Thread metadata
+
+    ThreadMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content:
+          type: string
+        metadata:
+          type: object
+
+    FinoMessagePayload:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Natural language query
+        context:
+          type: object
+          description: Additional context for the query
+
+    # ---------------------------------------------------------------------------
+    # Connection Schemas
+    # ---------------------------------------------------------------------------
+    SourceType:
+      type: object
+      properties:
+        type:
+          type: string
+          description: Source type identifier
+        name:
+          type: string
+          description: Display name
+        description:
+          type: string
+
+    Connection:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+          enum: [connected, disconnected, error]
+        created_at:
+          type: string
+          format: date-time
+        config:
+          type: object
+
+    ConnectionConfig:
+      type: object
+      properties:
+        host:
+          type: string
+        port:
+          type: integer
+        auth:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [basic, api_key, oauth]
+            username:
+              type: string
+            password:
+              type: string
+              format: password
+
+    # ---------------------------------------------------------------------------
+    # Import Job Schemas
+    # ---------------------------------------------------------------------------
+    ImportJob:
+      type: object
+      properties:
+        job_id:
+          type: string
+        source_id:
+          type: string
+        target_dataset:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        schedule:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_run:
+          type: string
+          format: date-time
+
+    ImportJobConfig:
+      type: object
+      required:
+        - source_id
+        - target_dataset
+      properties:
+        source_id:
+          type: string
+          description: Connection ID to import from
+        target_dataset:
+          type: string
+          description: Dataset to import into
+        schedule:
+          type: string
+          description: Cron expression for scheduling
+        query:
+          type: string
+          description: Optional query to filter data
+
+    # ---------------------------------------------------------------------------
+    # RBAC Schemas
+    # ---------------------------------------------------------------------------
+    User:
+      type: object
+      properties:
+        username:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
+    UserConfig:
+      type: object
+      properties:
+        Version:
+          type: string
+          example: "2025-01-01"
+        Password:
+          type: string
+          format: password
+        Roles:
+          type: array
+          items:
+            type: string
+
+    UserConfigYAML:
+      type: string
+      description: |
+        YAML configuration for user:
+        ```yaml
+        Version: 2025-01-01
+        Password: SecurePassword123!
+        Roles:
+          - role-name-1
+          - role-name-2
+        ```
+
+    Role:
+      type: object
+      properties:
+        name:
+          type: string
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+        created_at:
+          type: string
+          format: date-time
+
+    RoleConfig:
+      type: object
+      properties:
+        Version:
+          type: string
+          example: "2025-01-01"
+        Permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+
+    RoleConfigYAML:
+      type: string
+      description: |
+        YAML configuration for role:
+        ```yaml
+        Version: 2025-01-01
+        Permissions:
+          - ResourceType: record
+            Actions: [read, write]
+            Resources: ["dataset-*"]
+            Fields:
+              Allow: ["field1"]
+              Deny: ["sensitive"]
+        ```
+
+    Permission:
+      type: object
+      properties:
+        ResourceType:
+          type: string
+          enum: [metadata, dataset, record, field, notifications]
+        Actions:
+          type: array
+          items:
+            type: string
+            enum: [read, write, create, delete]
+        Resources:
+          type: array
+          items:
+            type: string
+          description: Resource patterns (supports wildcards)
+        Fields:
+          type: object
+          properties:
+            Allow:
+              type: array
+              items:
+                type: string
+            Deny:
+              type: array
+              items:
+                type: string
+            Mask:
+              type: object
+              additionalProperties:
+                type: string
+
+    Credentials:
+      type: object
+      properties:
+        access_key:
+          type: string
+          description: New access key ID
+        secret_key:
+          type: string
+          description: New secret access key
