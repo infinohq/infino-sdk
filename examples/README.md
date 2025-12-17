@@ -33,6 +33,21 @@ Learn how to:
 python examples/basic_query.py
 ```
 
+### [file_upload.py](file_upload.py)
+**File upload operations (JSON, JSONL, CSV)**
+
+Learn how to:
+- Upload JSON files to datasets
+- Upload JSONL (newline-delimited JSON) files
+- Upload CSV files with automatic header parsing
+- Use synchronous mode (wait for completion)
+- Use asynchronous mode with job status polling
+- Handle upload errors and statistics
+
+```bash
+python examples/file_upload.py
+```
+
 ### [upload_json.py](upload_json.py)
 **Bulk document operations**
 

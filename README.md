@@ -24,6 +24,7 @@ Official Python SDK for [Infino](https://infino.ai) - the context engine for you
   - [Discover Available Sources](#discover-available-sources)
   - [Manage Connections](#manage-connections)
   - [Query Connected Sources](#query-connected-sources)
+  - [File Upload](#file-upload)
   - [Import Jobs](#import-jobs)
 - [Query – Ask Questions](#query--ask-questions)
   - [Natural Language (Fino AI)](#natural-language-fino-ai)
@@ -145,7 +146,7 @@ Complete reference of SDK methods organized by category. Click any method to jum
 | [`clear_thread_messages(thread_id)`](#manage-conversation-threads) | Clear all thread messages |
 | [`send_message(payload)`](#manage-conversation-threads) | Send message (simplified API) |
 
-### Connections (10 methods)
+### Connections (12 methods)
 
 | Method | Description |
 |--------|-------------|
@@ -156,6 +157,8 @@ Complete reference of SDK methods organized by category. Click any method to jum
 | [`update_connection(connection_id, config)`](#manage-connections) | Update connection |
 | [`delete_connection(connection_id)`](#manage-connections) | Delete connection |
 | [`get_source_metadata(connection_id, dataset)`](#query-connected-sources) | Get metadata from source |
+| [`upload_file(dataset, file_path, format, ...)`](#file-upload) | Upload file (JSON, JSONL, CSV) |
+| [`get_connector_job_status(run_id)`](#file-upload) | Get async job status |
 | [`create_import_job(source_type, config)`](#import-jobs) | Create import job |
 | [`get_import_jobs()`](#import-jobs) | List import jobs |
 | [`delete_import_job(job_id)`](#import-jobs) | Delete import job |
@@ -254,6 +257,54 @@ results = sdk.query_source(
 metadata = sdk.get_source_metadata("conn_elasticsearch_prod", "logs-2024")
 print(f"Fields: {metadata['mappings']}")
 ```
+
+### File Upload
+
+Upload files directly to datasets without setting up connections. Supports JSON, JSONL, and CSV formats.
+
+```python
+from infino_sdk import InfinoSDK
+
+sdk = InfinoSDK(access_key, secret_key, endpoint)
+
+# Upload a JSON file (synchronous - waits for completion)
+result = sdk.upload_file(
+    dataset="my-dataset",
+    file_path="data.json",
+    format="json"  # or "jsonl", "csv", "auto"
+)
+print(f"Uploaded {result['stats']['documents_processed']} documents")
+
+# Upload a CSV file
+result = sdk.upload_file("sales-data", "quarterly_sales.csv", format="csv")
+
+# Upload with async mode (for large files)
+result = sdk.upload_file(
+    dataset="large-dataset",
+    file_path="big_data.jsonl",
+    format="jsonl",
+    async_mode=True  # Returns immediately with run_id
+)
+print(f"Job submitted: {result['run_id']}")
+
+# Poll for completion
+import time
+while True:
+    status = sdk.get_connector_job_status(result['run_id'])
+    print(f"Status: {status['status']}")
+    if status['status'] in ('completed', 'failed'):
+        if status['status'] == 'completed':
+            print(f"Processed {status['stats']['documents_processed']} docs")
+        break
+    time.sleep(2)
+```
+
+**Parameters:**
+- `dataset`: Target dataset name
+- `file_path`: Path to the file to upload
+- `format`: File format - `"json"`, `"jsonl"`, `"csv"`, or `"auto"` (default: auto-detect)
+- `batch_size`: Documents per batch (default: 1000)
+- `async_mode`: If True, returns immediately with `run_id` for polling (default: False)
 
 ### Import Jobs
 
@@ -748,6 +799,7 @@ Complete working examples organized by workflow:
 
 ### Connect Examples
 - [**basic_query.py**](examples/basic_query.py) - Query data sources with Query DSL
+- [**file_upload.py**](examples/file_upload.py) - Upload JSON, JSONL, and CSV files
 
 ### Query Examples
 - [**sql_analytics.py**](examples/sql_analytics.py) - SQL queries across sources
