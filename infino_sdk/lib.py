@@ -420,8 +420,12 @@ class InfinoSDK:
         """
         # Build URL with query params for signing
         # The signature must include query params or server will reject
+        # URL-encode params to prevent injection attacks
         if params:
-            query_string = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
+            query_string = "&".join(
+                f"{urllib.parse.quote(str(k), safe='')}={urllib.parse.quote(str(v), safe='')}"
+                for k, v in sorted(params.items())
+            )
             url_for_signing = f"{url}?{query_string}"
         else:
             url_for_signing = url
