@@ -60,19 +60,19 @@ Learn how to:
 python examples/user_management.py
 ```
 
-### [fino_nl.py](fino_nl.py)
-**Natural Language Queriesn**
+### [fino_websocket_chat.py](fino_websocket_chat.py)
+**Natural Language Queries via WebSocket**
 
 Learn how to:
+- Create conversation threads via REST API
 - Establish WebSocket connections with SigV4 authentication
-- Send queries and receive real-time AI responses
-- Handle multi-turn conversations
-- Process streaming updates
-- Implement reconnection logic
-- Handle WebSocket errors gracefully
+- Send natural language queries and receive streaming AI responses
+- Handle progress updates and final results
+- Implement multi-turn conversations with context
+- Build interactive chat sessions
 
 ```bash
-python examples/fino_nl.py
+python examples/fino_websocket_chat.py
 ```
 
 ### [sql_analytics.py](sql_analytics.py)
