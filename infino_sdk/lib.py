@@ -425,7 +425,9 @@ class InfinoSDK:
         else:
             url_for_signing = url
 
-        logger.debug(f"INFINO SDK: Making multipart {method} request to {url_for_signing}")
+        logger.debug(
+            f"INFINO SDK: Making multipart {method} request to {url_for_signing}"
+        )
 
         timestamp = datetime.now(timezone.utc)
 
@@ -448,7 +450,9 @@ class InfinoSDK:
 
         # Execute multipart request - pass URL with query params already included
         # Don't pass params separately since they're in the URL
-        return self.execute_multipart_request(method, url_for_signing, req_headers, files, data, None)
+        return self.execute_multipart_request(
+            method, url_for_signing, req_headers, files, data, None
+        )
 
     def execute_multipart_request(
         self,
@@ -506,7 +510,9 @@ class InfinoSDK:
                     logger.error(f"INFINO SDK: Server error {status}: {text}")
                     if attempt < max_retries - 1:
                         time.sleep(retry_delay / 1000)  # Convert ms to seconds
-                        retry_delay = min(retry_delay * 2, self.retry_config.max_interval)
+                        retry_delay = min(
+                            retry_delay * 2, self.retry_config.max_interval
+                        )
                         continue
                     raise InfinoError(InfinoError.Type.REQUEST, text, status, url)
 
@@ -998,8 +1004,7 @@ class InfinoSDK:
         # Validate file exists
         if not os.path.exists(file_path):
             raise InfinoError(
-                InfinoError.Type.INVALID_REQUEST,
-                f"File not found: {file_path}"
+                InfinoError.Type.INVALID_REQUEST, f"File not found: {file_path}"
             )
 
         # Build URL with async query param
@@ -1020,9 +1025,7 @@ class InfinoSDK:
 
         # Open file and prepare multipart
         with open(file_path, "rb") as f:
-            files = {
-                "file": (filename, f, content_type)
-            }
+            files = {"file": (filename, f, content_type)}
 
             # Form data fields
             data = {

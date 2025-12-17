@@ -1,12 +1,13 @@
 """Tests for file upload functionality."""
+
 import json
 import os
 import tempfile
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import patch, MagicMock
 
-from infino_sdk import InfinoSDK, InfinoError
+from infino_sdk import InfinoError, InfinoSDK
 
 
 @pytest.fixture
@@ -15,14 +16,14 @@ def sdk():
     return InfinoSDK(
         access_key="test_key",
         secret_key="test_secret",
-        endpoint="http://localhost:8000"
+        endpoint="http://localhost:8000",
     )
 
 
 @pytest.fixture
 def temp_json_file():
     """Create temporary JSON file for testing."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump([{"id": 1, "name": "test"}], f)
         temp_path = f.name
     yield temp_path
@@ -32,7 +33,7 @@ def temp_json_file():
 @pytest.fixture
 def temp_csv_file():
     """Create temporary CSV file for testing."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
         f.write("id,name\n1,test\n2,test2\n")
         temp_path = f.name
     yield temp_path
@@ -42,7 +43,7 @@ def temp_csv_file():
 @pytest.fixture
 def temp_jsonl_file():
     """Create temporary JSONL file for testing."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
         f.write('{"id": 1, "name": "test"}\n')
         f.write('{"id": 2, "name": "test2"}\n')
         temp_path = f.name
@@ -64,10 +65,10 @@ class TestUploadFile:
                 "documents_processed": 1,
                 "documents_failed": 0,
             },
-            "errors": []
+            "errors": [],
         }
 
-        with patch.object(sdk, 'request_multipart', return_value=mock_response):
+        with patch.object(sdk, "request_multipart", return_value=mock_response):
             result = sdk.upload_file("test_dataset", temp_json_file)
 
             assert result["status"] == "completed"
@@ -81,10 +82,10 @@ class TestUploadFile:
             "status": "submitted",
             "message": "File submitted for processing",
             "stats": None,
-            "errors": []
+            "errors": [],
         }
 
-        with patch.object(sdk, 'request_multipart', return_value=mock_response):
+        with patch.object(sdk, "request_multipart", return_value=mock_response):
             result = sdk.upload_file("test_dataset", temp_json_file, async_mode=True)
 
             assert result["status"] == "submitted"
@@ -101,7 +102,7 @@ class TestUploadFile:
         """Test CSV file upload."""
         mock_response = {"status": "completed", "run_id": "test"}
 
-        with patch.object(sdk, 'request_multipart', return_value=mock_response) as mock:
+        with patch.object(sdk, "request_multipart", return_value=mock_response) as mock:
             sdk.upload_file("test_dataset", temp_csv_file, format="csv")
 
             # Verify format was passed correctly
@@ -112,7 +113,7 @@ class TestUploadFile:
         """Test JSONL file upload."""
         mock_response = {"status": "completed", "run_id": "test"}
 
-        with patch.object(sdk, 'request_multipart', return_value=mock_response) as mock:
+        with patch.object(sdk, "request_multipart", return_value=mock_response) as mock:
             sdk.upload_file("test_dataset", temp_jsonl_file, format="jsonl")
 
             call_args = mock.call_args
@@ -122,7 +123,7 @@ class TestUploadFile:
         """Test upload with custom batch size."""
         mock_response = {"status": "completed", "run_id": "test"}
 
-        with patch.object(sdk, 'request_multipart', return_value=mock_response) as mock:
+        with patch.object(sdk, "request_multipart", return_value=mock_response) as mock:
             sdk.upload_file("test_dataset", temp_json_file, batch_size=1000)
 
             call_args = mock.call_args
@@ -132,7 +133,7 @@ class TestUploadFile:
         """Test upload with auto format detection."""
         mock_response = {"status": "completed", "run_id": "test"}
 
-        with patch.object(sdk, 'request_multipart', return_value=mock_response) as mock:
+        with patch.object(sdk, "request_multipart", return_value=mock_response) as mock:
             sdk.upload_file("test_dataset", temp_json_file)  # format defaults to "auto"
 
             call_args = mock.call_args
@@ -142,7 +143,7 @@ class TestUploadFile:
         """Test that upload_file uses correct URL and params."""
         mock_response = {"status": "completed", "run_id": "test"}
 
-        with patch.object(sdk, 'request_multipart', return_value=mock_response) as mock:
+        with patch.object(sdk, "request_multipart", return_value=mock_response) as mock:
             sdk.upload_file("test_dataset", temp_json_file, async_mode=False)
 
             call_args = mock.call_args
@@ -155,7 +156,7 @@ class TestUploadFile:
         """Test that async_mode=True sets correct query param."""
         mock_response = {"status": "submitted", "run_id": "test"}
 
-        with patch.object(sdk, 'request_multipart', return_value=mock_response) as mock:
+        with patch.object(sdk, "request_multipart", return_value=mock_response) as mock:
             sdk.upload_file("test_dataset", temp_json_file, async_mode=True)
 
             call_args = mock.call_args
@@ -170,10 +171,10 @@ class TestGetConnectorJobStatus:
         mock_response = {
             "run_id": "test-uuid",
             "status": "completed",
-            "stats": {"documents_processed": 100}
+            "stats": {"documents_processed": 100},
         }
 
-        with patch.object(sdk, 'request', return_value=mock_response):
+        with patch.object(sdk, "request", return_value=mock_response):
             result = sdk.get_connector_job_status("test-uuid")
 
             assert result["status"] == "completed"
@@ -181,13 +182,9 @@ class TestGetConnectorJobStatus:
 
     def test_get_job_status_running(self, sdk):
         """Test getting status of running job."""
-        mock_response = {
-            "run_id": "test-uuid",
-            "status": "running",
-            "stats": None
-        }
+        mock_response = {"run_id": "test-uuid", "status": "running", "stats": None}
 
-        with patch.object(sdk, 'request', return_value=mock_response):
+        with patch.object(sdk, "request", return_value=mock_response):
             result = sdk.get_connector_job_status("test-uuid")
 
             assert result["status"] == "running"
@@ -197,10 +194,10 @@ class TestGetConnectorJobStatus:
         mock_response = {
             "run_id": "test-uuid",
             "status": "failed",
-            "errors": ["Parse error on line 5"]
+            "errors": ["Parse error on line 5"],
         }
 
-        with patch.object(sdk, 'request', return_value=mock_response):
+        with patch.object(sdk, "request", return_value=mock_response):
             result = sdk.get_connector_job_status("test-uuid")
 
             assert result["status"] == "failed"
@@ -210,12 +207,12 @@ class TestGetConnectorJobStatus:
         """Test that get_connector_job_status uses correct URL."""
         mock_response = {"run_id": "my-job-id", "status": "completed"}
 
-        with patch.object(sdk, 'request', return_value=mock_response) as mock:
+        with patch.object(sdk, "request", return_value=mock_response) as mock:
             sdk.get_connector_job_status("my-job-id")
 
             call_args = mock.call_args
             assert call_args[0][0] == "GET"
-            assert call_args[0][1] == "http://localhost:8000/api/_connectors/jobs/my-job-id"
+            assert call_args[0][1] == "http://localhost:8000/_connectors/jobs/my-job-id"
 
 
 class TestRequestMultipart:
@@ -223,15 +220,15 @@ class TestRequestMultipart:
 
     def test_multipart_uses_unsigned_payload(self, sdk):
         """Test that multipart requests use UNSIGNED-PAYLOAD for signing."""
-        with patch.object(sdk, 'sign_request_headers') as mock_sign:
-            with patch.object(sdk, 'execute_multipart_request', return_value={}):
+        with patch.object(sdk, "sign_request_headers") as mock_sign:
+            with patch.object(sdk, "execute_multipart_request", return_value={}):
                 mock_sign.return_value = {}
 
                 sdk.request_multipart(
                     "POST",
                     "http://localhost:8000/import/file",
                     files={"file": ("test.json", b"content", "application/json")},
-                    data={"index_name": "test"}
+                    data={"index_name": "test"},
                 )
 
                 # Verify UNSIGNED-PAYLOAD was passed to sign_request_headers
@@ -240,15 +237,18 @@ class TestRequestMultipart:
 
     def test_multipart_does_not_set_content_type(self, sdk):
         """Test that multipart request does not manually set Content-Type header."""
-        with patch.object(sdk, 'sign_request_headers') as mock_sign:
-            with patch.object(sdk, 'execute_multipart_request', return_value={}):
-                mock_sign.return_value = {"X-Amz-Date": "test", "X-Amz-Content-Sha256": "test"}
+        with patch.object(sdk, "sign_request_headers") as mock_sign:
+            with patch.object(sdk, "execute_multipart_request", return_value={}):
+                mock_sign.return_value = {
+                    "X-Amz-Date": "test",
+                    "X-Amz-Content-Sha256": "test",
+                }
 
                 sdk.request_multipart(
                     "POST",
                     "http://localhost:8000/import/file",
                     files={"file": ("test.json", b"content", "application/json")},
-                    data={"index_name": "test"}
+                    data={"index_name": "test"},
                 )
 
                 # Verify Content-Type is NOT in the headers we create
@@ -263,14 +263,14 @@ class TestRequestMultipart:
         mock_response.status_code = 200
         mock_response.text = '{"status": "completed"}'
 
-        with patch.object(sdk.session, 'request', return_value=mock_response):
+        with patch.object(sdk.session, "request", return_value=mock_response):
             result = sdk.execute_multipart_request(
                 "POST",
                 "http://localhost:8000/import/file",
                 headers={"Authorization": "test"},
                 files={"file": ("test.json", b"content", "application/json")},
                 data={"index_name": "test"},
-                params={"async": "false"}
+                params={"async": "false"},
             )
 
             assert result["status"] == "completed"
@@ -281,7 +281,7 @@ class TestRequestMultipart:
         mock_response.status_code = 400
         mock_response.text = "Bad request"
 
-        with patch.object(sdk.session, 'request', return_value=mock_response):
+        with patch.object(sdk.session, "request", return_value=mock_response):
             with pytest.raises(InfinoError) as exc_info:
                 sdk.execute_multipart_request(
                     "POST",
@@ -289,7 +289,7 @@ class TestRequestMultipart:
                     headers={},
                     files={},
                     data={},
-                    params=None
+                    params=None,
                 )
 
             assert exc_info.value._status_code == 400
