@@ -1127,6 +1127,159 @@ paths:
           $ref: "#/components/responses/InternalError"
 
   # =============================================================================
+  # FILE UPLOAD
+  # =============================================================================
+  /import/file:
+    post:
+      operationId: uploadFile
+      summary: Upload file to dataset
+      description: |
+        Upload a file (JSON, JSONL, or CSV) directly to a dataset.
+
+        **Supported formats:**
+        - `json` - JSON array of objects
+        - `jsonl` - Newline-delimited JSON (one object per line)
+        - `csv` - Comma-separated values with header row
+
+        **Modes:**
+        - Synchronous (default): Waits for processing to complete
+        - Asynchronous: Returns immediately with a `run_id` for polling
+
+        **Note:** This endpoint uses `multipart/form-data` and requires
+        `UNSIGNED-PAYLOAD` for the `x-amz-content-sha256` header since
+        the multipart boundary is randomly generated.
+      tags:
+        - Import Jobs
+      parameters:
+        - name: async
+          in: query
+          required: false
+          description: If true, returns immediately with run_id for polling
+          schema:
+            type: string
+            enum: ["true", "false"]
+            default: "false"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - index_name
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The file to upload
+                index_name:
+                  type: string
+                  description: Target dataset name
+                format:
+                  type: string
+                  enum: [json, jsonl, csv, auto]
+                  default: auto
+                  description: File format (auto-detected from extension if not specified)
+                batch_size:
+                  type: integer
+                  default: 1000
+                  description: Number of documents per batch
+      responses:
+        "200":
+          description: File uploaded successfully (sync mode) or submitted (async mode)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileUploadResponse"
+              examples:
+                syncComplete:
+                  summary: Synchronous upload completed
+                  value:
+                    connector_id: "file"
+                    run_id: "abc123-def456"
+                    status: "completed"
+                    message: "File 'data.json' processed successfully"
+                    stats:
+                      documents_processed: 100
+                      documents_failed: 0
+                      bytes_processed: 15234
+                      avg_throughput_docs_per_sec: 250.5
+                    errors: []
+                asyncSubmitted:
+                  summary: Asynchronous upload submitted
+                  value:
+                    connector_id: "file"
+                    run_id: "abc123-def456"
+                    status: "submitted"
+                    message: "File 'data.json' submitted for background processing"
+                    stats: null
+                    errors: []
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /_connectors/jobs/{run_id}:
+    get:
+      operationId: getJobStatus
+      summary: Get job status
+      description: |
+        Get the status of an asynchronous file upload or connector job.
+        Use this to poll for completion after submitting an async upload.
+      tags:
+        - Import Jobs
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          description: Job run identifier returned from async upload
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobStatus"
+              examples:
+                completed:
+                  value:
+                    run_id: "abc123-def456"
+                    status: "completed"
+                    connector_id: "file"
+                    index_name: "my-dataset"
+                    started_at: "2025-01-15T10:30:00Z"
+                    completed_at: "2025-01-15T10:30:05Z"
+                    duration_ms: 5000
+                    stats:
+                      documents_processed: 1000
+                      documents_failed: 0
+                      bytes_processed: 152340
+                      avg_throughput_docs_per_sec: 200.0
+                      errors: []
+                running:
+                  value:
+                    run_id: "abc123-def456"
+                    status: "running"
+                    connector_id: "file"
+                    index_name: "my-dataset"
+                    started_at: "2025-01-15T10:30:00Z"
+                    completed_at: null
+                    duration_ms: null
+                    stats: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # =============================================================================
   # IMPORT JOBS
   # =============================================================================
   /import/{source_type}:
@@ -2037,6 +2190,100 @@ components:
         query:
           type: string
           description: Optional query to filter data
+
+    FileUploadResponse:
+      type: object
+      description: Response from file upload operation
+      properties:
+        connector_id:
+          type: string
+          description: Always "file" for file uploads
+          examples:
+            - "file"
+        run_id:
+          type: string
+          format: uuid
+          description: Unique identifier for this upload job
+        status:
+          type: string
+          enum: [submitted, running, completed, failed]
+          description: Current status of the upload
+        message:
+          type: string
+          description: Human-readable status message
+        stats:
+          $ref: "#/components/schemas/UploadStats"
+        errors:
+          type: array
+          items:
+            type: string
+          description: List of error messages (if any)
+
+    JobStatus:
+      type: object
+      description: Status of an asynchronous job
+      properties:
+        run_id:
+          type: string
+          format: uuid
+          description: Unique identifier for the job
+        status:
+          type: string
+          enum: [submitted, running, completed, failed]
+          description: Current status of the job
+        connector_id:
+          type: string
+          description: Type of connector (e.g., "file")
+        connection_id:
+          type: string
+          nullable: true
+          description: Connection ID (null for file uploads)
+        index_name:
+          type: string
+          description: Target dataset name
+        started_at:
+          type: string
+          format: date-time
+          description: When the job started
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the job completed (null if still running)
+        duration_ms:
+          type: integer
+          nullable: true
+          description: Total duration in milliseconds
+        error_message:
+          type: string
+          nullable: true
+          description: Error message if job failed
+        stats:
+          $ref: "#/components/schemas/UploadStats"
+
+    UploadStats:
+      type: object
+      nullable: true
+      description: Statistics for upload operation
+      properties:
+        documents_processed:
+          type: integer
+          description: Number of documents successfully processed
+        documents_failed:
+          type: integer
+          description: Number of documents that failed to process
+        bytes_processed:
+          type: integer
+          description: Total bytes processed
+        avg_throughput_docs_per_sec:
+          type: number
+          format: float
+          description: Average processing throughput
+        errors:
+          type: array
+          items:
+            type: string
+          description: Individual document errors
 
     # ---------------------------------------------------------------------------
     # RBAC Schemas
