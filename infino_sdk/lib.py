@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import time
 import urllib.parse
 from dataclasses import dataclass
@@ -999,7 +1000,6 @@ class InfinoSDK:
             # Poll for status
             status = sdk.get_connector_job_status(run_id)
         """
-        import os
 
         # Validate file exists
         if not os.path.exists(file_path):
