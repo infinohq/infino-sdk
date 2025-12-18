@@ -16,7 +16,10 @@ Step 1: Create a thread via REST API
     Response: {"id": "5f45ec9b-223d-464b-9819-fff45039604a", ...}
 
 Step 2: Connect to WebSocket with thread ID
-    URL: /_conversation/ws?threadId={thread_id}&clientId={client_id}
+    URL: /_conversation/ws
+    Headers:
+        x-infino-thread-id: {thread_id}
+        x-infino-client-id: {client_id}
 
 Step 3: Send message (see REQUEST FORMAT below)
 
@@ -254,11 +257,17 @@ async def example_simple_connection():
 
         # Step 2: Connect to WebSocket
         client_id = f"client-{uuid.uuid4().hex[:8]}"
-        ws_path = f"/_conversation/ws?threadId={thread_id}&clientId={client_id}"
+        ws_headers = {
+            "x-infino-thread-id": thread_id,
+            "x-infino-client-id": client_id,
+        }
         
         print("Connecting to WebSocket...")
         sdk = InfinoSDK(access_key, secret_key, endpoint)
-        ws = await asyncio.wait_for(sdk.websocket_connect(ws_path), timeout=10.0)
+        ws = await asyncio.wait_for(
+            sdk.websocket_connect("/_conversation/ws", headers=ws_headers),
+            timeout=10.0
+        )
         
         print("✓ Connected successfully!")
         print(f"  Thread ID: {thread_id}")
@@ -304,10 +313,16 @@ async def example_query_response():
 
         # Step 2: Connect to WebSocket
         client_id = f"client-{uuid.uuid4().hex[:8]}"
-        ws_path = f"/_conversation/ws?threadId={thread_id}&clientId={client_id}"
+        ws_headers = {
+            "x-infino-thread-id": thread_id,
+            "x-infino-client-id": client_id,
+        }
         
         sdk = InfinoSDK(access_key, secret_key, endpoint)
-        ws = await asyncio.wait_for(sdk.websocket_connect(ws_path), timeout=10.0)
+        ws = await asyncio.wait_for(
+            sdk.websocket_connect("/_conversation/ws", headers=ws_headers),
+            timeout=10.0
+        )
         print("✓ Connected!")
 
         # Step 3: Send query
@@ -394,10 +409,16 @@ async def example_multi_turn():
 
         # Connect to WebSocket
         client_id = f"client-{uuid.uuid4().hex[:8]}"
-        ws_path = f"/_conversation/ws?threadId={thread_id}&clientId={client_id}"
+        ws_headers = {
+            "x-infino-thread-id": thread_id,
+            "x-infino-client-id": client_id,
+        }
         
         sdk = InfinoSDK(access_key, secret_key, endpoint)
-        ws = await asyncio.wait_for(sdk.websocket_connect(ws_path), timeout=10.0)
+        ws = await asyncio.wait_for(
+            sdk.websocket_connect("/_conversation/ws", headers=ws_headers),
+            timeout=10.0
+        )
         print("✓ Connected!\n")
 
         # Send each query
@@ -472,10 +493,16 @@ async def example_interactive_chat():
 
         # Connect
         client_id = f"client-{uuid.uuid4().hex[:8]}"
-        ws_path = f"/_conversation/ws?threadId={thread_id}&clientId={client_id}"
+        ws_headers = {
+            "x-infino-thread-id": thread_id,
+            "x-infino-client-id": client_id,
+        }
         
         sdk = InfinoSDK(access_key, secret_key, endpoint)
-        ws = await asyncio.wait_for(sdk.websocket_connect(ws_path), timeout=10.0)
+        ws = await asyncio.wait_for(
+            sdk.websocket_connect("/_conversation/ws", headers=ws_headers),
+            timeout=10.0
+        )
         
         print("✓ Connected!")
         print("\nType your questions below. Type 'quit' to exit.\n")
