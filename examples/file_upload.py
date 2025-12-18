@@ -9,10 +9,125 @@ Usage:
     # Set environment variables
     export INFINO_ACCESS_KEY="your_access_key"
     export INFINO_SECRET_KEY="your_secret_key"
-    export INFINO_ENDPOINT="https://api.infino.ai"
+    export INFINO_ENDPOINT="https://api.infino.ws"
 
     # Run the example
     python file_upload.py
+
+================================================================================
+WORKFLOW
+================================================================================
+
+Step 1: Initialize SDK
+    sdk = InfinoSDK(access_key, secret_key, endpoint)
+
+Step 2: Create dataset (if needed)
+    sdk.create_dataset("my_dataset")
+
+Step 3: Upload file (choose sync or async mode)
+    # Sync: Waits for completion
+    result = sdk.upload_file(dataset, file_path, format="csv", async_mode=False)
+    
+    # Async: Returns immediately, poll for status
+    result = sdk.upload_file(dataset, file_path, format="auto", async_mode=True)
+    status = sdk.get_connector_job_status(result['run_id'])
+
+================================================================================
+RESPONSE: sdk.upload_file() with async_mode=False (Synchronous)
+================================================================================
+
+Waits for the file to be fully processed before returning.
+
+{
+    "connector_id": "file",                    # Connector type identifier
+    "run_id": "61ad7a3c-12cb-471e-...",        # Unique job identifier (UUID)
+    "status": "completed",                     # Job status: "completed", "failed"
+    "message": "File 'example.csv' processed successfully",  # Human-readable message
+    "stats": {                                 # Processing statistics
+        "documents_processed": 24531,          # Number of documents successfully ingested
+        "documents_failed": 0,                 # Number of documents that failed
+        "bytes_processed": 12292133,           # Total bytes processed
+        "duration_ms": 0,                      # Processing time in milliseconds
+        "avg_throughput_docs_per_sec": 9482.1  # Average ingestion rate
+    },
+    "errors": []                               # List of error messages (if any)
+}
+
+================================================================================
+RESPONSE: sdk.upload_file() with async_mode=True (Asynchronous)
+================================================================================
+
+Returns immediately after submitting the job. Use run_id to poll for status.
+
+{
+    "connector_id": "file",                    # Connector type identifier
+    "run_id": "7fd9eb57-ab4f-4c2a-...",        # Unique job identifier (use for polling)
+    "status": "submitted",                     # Initial status: "submitted"
+    "message": "File 'example.csv' submitted for background processing",
+    "stats": null,                             # Stats not available until completed
+    "errors": []                               # Empty on successful submission
+}
+
+================================================================================
+RESPONSE: sdk.get_connector_job_status(run_id) - While Running
+================================================================================
+
+{
+    "run_id": "7fd9eb57-ab4f-4c2a-...",        # Unique job identifier
+    "status": "running",                       # "submitted", "running", "completed", "failed"
+    "connector_id": "file",                    # Connector type identifier
+    "connection_id": null,                     # Connection ID (if applicable)
+    "index_name": "my_dataset",                # Target dataset/index name
+    "started_at": "2025-12-18T08:08:45.068839626+00:00",   # Job start (ISO 8601)
+    "completed_at": "2025-12-18T08:08:45.840483308+00:00", # Job completion (ISO 8601)
+    "duration_ms": 771,                        # Processing time in milliseconds
+    "error_message": null,                     # Error message (if failed)
+    "stats": {                                 # Processing statistics
+        "documents_processed": 0,              # Documents processed so far
+        "documents_failed": 0,                 # Documents failed so far
+        "bytes_processed": 0,                  # Bytes processed so far
+        "avg_throughput_docs_per_sec": 0.0,    # Current throughput rate
+        "errors": []                           # List of processing errors
+    }
+}
+
+================================================================================
+RESPONSE: sdk.get_connector_job_status(run_id) - When Completed
+================================================================================
+
+{
+    "run_id": "7fd9eb57-ab4f-4c2a-...",
+    "status": "completed",                     # Final status
+    "connector_id": "file",
+    "connection_id": null,
+    "index_name": "my_dataset",
+    "started_at": "2025-12-18T08:08:45.068839626+00:00",
+    "completed_at": "2025-12-18T08:08:46.500000000+00:00",
+    "duration_ms": 1431,
+    "error_message": null,
+    "stats": {
+        "documents_processed": 24531,          # Total documents ingested
+        "documents_failed": 0,
+        "bytes_processed": 12292133,
+        "avg_throughput_docs_per_sec": 9482.1,
+        "errors": []
+    }
+}
+
+================================================================================
+STATUS VALUES
+================================================================================
+
+Upload status (async_mode=True):
+    - "submitted"  : Job received, queued for processing
+    
+Job status (get_connector_job_status):
+    - "submitted"  : Job received, not yet started
+    - "running"    : Job is actively processing
+    - "completed"  : Job finished successfully
+    - "failed"     : Job failed (check error_message and stats.errors)
+
+================================================================================
 """
 import json
 import os
@@ -20,7 +135,7 @@ import sys
 import tempfile
 import time
 
-from infino_sdk import InfinoSDK, InfinoError
+from infino_sdk import InfinoError, InfinoSDK
 
 
 def create_sample_files():
@@ -54,7 +169,10 @@ def create_sample_files():
 
 
 def sync_upload_example(sdk: InfinoSDK, file_path: str, dataset: str, format: str):
-    """Example: Synchronous file upload (waits for completion)."""
+    """Example: Synchronous file upload (waits for completion).
+    
+    See RESPONSE: sdk.upload_file() with async_mode=False at top of file for response structure.
+    """
     print(f"\n{'='*60}")
     print(f"Sync Upload Example - {format.upper()} file")
     print(f"{'='*60}")
@@ -94,7 +212,13 @@ def sync_upload_example(sdk: InfinoSDK, file_path: str, dataset: str, format: st
 
 
 def async_upload_example(sdk: InfinoSDK, file_path: str, dataset: str):
-    """Example: Asynchronous file upload with polling."""
+    """Example: Asynchronous file upload with polling.
+    
+    See response structures at top of file:
+    - RESPONSE: sdk.upload_file() with async_mode=True
+    - RESPONSE: sdk.get_connector_job_status(run_id) - While Running
+    - RESPONSE: sdk.get_connector_job_status(run_id) - When Completed
+    """
     print(f"\n{'='*60}")
     print("Async Upload Example - Submit and Poll")
     print(f"{'='*60}")
@@ -127,6 +251,7 @@ def async_upload_example(sdk: InfinoSDK, file_path: str, dataset: str):
 
             if current_status == 'completed':
                 print("\nJob completed successfully!")
+                
                 if status.get('stats'):
                     stats = status['stats']
                     print(f"Documents processed: {stats.get('documents_processed', 'N/A')}")
@@ -154,8 +279,8 @@ def main():
     # Configuration - use environment variables or replace with your credentials
     ACCESS_KEY = os.environ.get("INFINO_ACCESS_KEY", "your_access_key")
     SECRET_KEY = os.environ.get("INFINO_SECRET_KEY", "your_secret_key")
-    ENDPOINT = os.environ.get("INFINO_ENDPOINT", "https://api.infino.ai")
-    DATASET = "file_upload_example"
+    ENDPOINT = os.environ.get("INFINO_ENDPOINT", "https://api.infino.ws")
+    DATASET = "file_test"
 
     # Check for credentials
     if ACCESS_KEY == "your_access_key":
@@ -164,7 +289,7 @@ def main():
         print("\nExample:")
         print("  export INFINO_ACCESS_KEY='your_key'")
         print("  export INFINO_SECRET_KEY='your_secret'")
-        print("  export INFINO_ENDPOINT='https://api.infino.ai'")
+        print("  export INFINO_ENDPOINT='https://api.infino.ws'")
         sys.exit(1)
 
     print(f"Connecting to Infino at {ENDPOINT}")
@@ -202,7 +327,7 @@ def main():
         sync_upload_example(sdk, jsonl_file, DATASET, "jsonl")
 
         # Example 4: Async upload with polling
-        async_upload_example(sdk, json_file, DATASET)
+        async_upload_example(sdk, csv_file, DATASET)
 
         # Cleanup temp files
         print("\nCleaning up temporary files...")

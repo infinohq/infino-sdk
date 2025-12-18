@@ -121,7 +121,7 @@ def retry_with_custom_config():
     sdk = InfinoSDK(
         access_key=os.getenv("INFINO_ACCESS_KEY", "test"),
         secret_key=os.getenv("INFINO_SECRET_KEY", "test"),
-        endpoint=os.getenv("INFINO_ENDPOINT", "https://api.infino.ai"),
+        endpoint=os.getenv("INFINO_ENDPOINT", "https://api.infino.ws"),
         retry_config=retry_config,
     )
     try:
@@ -201,7 +201,7 @@ def context_manager_error_handling():
         sdk = InfinoSDK(
             access_key=os.getenv("INFINO_ACCESS_KEY", "test"),
             secret_key=os.getenv("INFINO_SECRET_KEY", "test"),
-            endpoint=os.getenv("INFINO_ENDPOINT", "https://api.infino.ai"),
+            endpoint=os.getenv("INFINO_ENDPOINT", "https://api.infino.ws"),
         )
         # Multiple operations
         sdk.ping()
@@ -218,7 +218,7 @@ def main():
 
     access_key = os.getenv("INFINO_ACCESS_KEY", "your_access_key")
     secret_key = os.getenv("INFINO_SECRET_KEY", "your_secret_key")
-    endpoint = os.getenv("INFINO_ENDPOINT", "https://api.infino.ai")
+    endpoint = os.getenv("INFINO_ENDPOINT", "https://api.infino.ws")
 
     sdk = InfinoSDK(access_key, secret_key, endpoint)
     # Run examples

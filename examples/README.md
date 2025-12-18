@@ -14,7 +14,7 @@ pip install infino-sdk
 ```bash
 export INFINO_ACCESS_KEY="your_access_key"
 export INFINO_SECRET_KEY="your_secret_key"
-export INFINO_ENDPOINT="https://api.infino.ai"
+export INFINO_ENDPOINT="https://api.infino.ws"
 ```
 
 ## Examples
