@@ -386,7 +386,7 @@
 ---
 
 ### list_threads
-**Description:** List all Fino conversation threads.
+**Description:** List all Fino threads.
 
 **Input Parameters:** None
 
@@ -399,7 +399,7 @@
 ---
 
 ### create_thread
-**Description:** Create a new Fino conversation thread.
+**Description:** Create a new Fino thread.
 
 **Input Parameters:**
 - `config` (dict, required): Configuration dictionary for the thread
@@ -427,7 +427,7 @@
 ---
 
 ### get_thread
-**Description:** Retrieve a specific Fino conversation thread.
+**Description:** Retrieve a specific Fino thread.
 
 **Input Parameters:**
 - `thread_id` (str, required): The ID of the thread to retrieve
@@ -448,7 +448,7 @@
 ---
 
 ### update_thread
-**Description:** Update a Fino conversation thread metadata.
+**Description:** Update a Fino thread metadata.
 
 **Input Parameters:**
 - `thread_id` (str, required): The ID of the thread to update
@@ -468,7 +468,7 @@
 ---
 
 ### delete_thread
-**Description:** Delete a Fino conversation thread.
+**Description:** Delete a Fino thread.
 
 **Input Parameters:**
 - `thread_id` (str, required): The ID of the thread to delete
@@ -673,15 +673,26 @@ true
 ---
 
 ### get_import_jobs
-**Description:** Get all import job statuses.
+**Description:** Get list of all import jobs.
 
 **Input Parameters:** None
 
 **Output:**
 ```json
-[]
+[
+  {
+    "job_id": "job-789",
+    "source_id": "conn-123",
+    "target_dataset": "my_dataset",
+    "status": "pending",
+    "schedule": "0 * * * *",
+    "created_at": "2025-01-15T12:00:00Z",
+    "last_run": null
+  }
+]
 ```
-(Returns array of import job objects, may be empty)
+
+**Job Status Values:** `pending`, `running`, `completed`, `failed`
 
 ---
 
