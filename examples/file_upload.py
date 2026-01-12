@@ -27,7 +27,7 @@ Step 2: Create dataset (if needed)
 Step 3: Upload file (choose sync or async mode)
     # Sync: Waits for completion
     result = sdk.upload_file(dataset, file_path, format="csv", async_mode=False)
-    
+
     # Async: Returns immediately, poll for status
     result = sdk.upload_file(dataset, file_path, format="auto", async_mode=True)
     status = sdk.get_connector_job_status(result['run_id'])
@@ -120,7 +120,7 @@ STATUS VALUES
 
 Upload status (async_mode=True):
     - "submitted"  : Job received, queued for processing
-    
+
 Job status (get_connector_job_status):
     - "submitted"  : Job received, not yet started
     - "running"    : Job is actively processing
@@ -148,21 +148,23 @@ def create_sample_files():
     ]
 
     # Create JSON file
-    json_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+    json_file = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
     json.dump(json_data, json_file)
     json_file.close()
 
     # Create JSONL file (newline-delimited JSON)
-    jsonl_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False)
+    jsonl_file = tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False)
     for record in json_data:
-        jsonl_file.write(json.dumps(record) + '\n')
+        jsonl_file.write(json.dumps(record) + "\n")
     jsonl_file.close()
 
     # Create CSV file
-    csv_file = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
+    csv_file = tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False)
     csv_file.write("id,name,department,salary\n")
     for record in json_data:
-        csv_file.write(f"{record['id']},{record['name']},{record['department']},{record['salary']}\n")
+        csv_file.write(
+            f"{record['id']},{record['name']},{record['department']},{record['salary']}\n"
+        )
     csv_file.close()
 
     return json_file.name, jsonl_file.name, csv_file.name
@@ -170,7 +172,7 @@ def create_sample_files():
 
 def sync_upload_example(sdk: InfinoSDK, file_path: str, dataset: str, format: str):
     """Example: Synchronous file upload (waits for completion).
-    
+
     See RESPONSE: sdk.upload_file() with async_mode=False at top of file for response structure.
     """
     print(f"\n{'='*60}")
@@ -184,22 +186,24 @@ def sync_upload_example(sdk: InfinoSDK, file_path: str, dataset: str, format: st
             dataset=dataset,
             file_path=file_path,
             format=format,
-            async_mode=False  # Wait for completion (default)
+            async_mode=False,  # Wait for completion (default)
         )
 
         print(f"Status: {result['status']}")
         print(f"Message: {result.get('message', 'N/A')}")
 
-        if result.get('stats'):
-            stats = result['stats']
+        if result.get("stats"):
+            stats = result["stats"]
             print(f"Documents processed: {stats.get('documents_processed', 'N/A')}")
             print(f"Documents failed: {stats.get('documents_failed', 'N/A')}")
-            if stats.get('duration_ms'):
+            if stats.get("duration_ms"):
                 print(f"Duration: {stats['duration_ms']}ms")
-            if stats.get('avg_throughput_docs_per_sec'):
-                print(f"Throughput: {stats['avg_throughput_docs_per_sec']:.1f} docs/sec")
+            if stats.get("avg_throughput_docs_per_sec"):
+                print(
+                    f"Throughput: {stats['avg_throughput_docs_per_sec']:.1f} docs/sec"
+                )
 
-        if result.get('errors'):
+        if result.get("errors"):
             print(f"Errors: {result['errors']}")
 
         return True
@@ -213,7 +217,7 @@ def sync_upload_example(sdk: InfinoSDK, file_path: str, dataset: str, format: st
 
 def async_upload_example(sdk: InfinoSDK, file_path: str, dataset: str):
     """Example: Asynchronous file upload with polling.
-    
+
     See response structures at top of file:
     - RESPONSE: sdk.upload_file() with async_mode=True
     - RESPONSE: sdk.get_connector_job_status(run_id) - While Running
@@ -231,10 +235,10 @@ def async_upload_example(sdk: InfinoSDK, file_path: str, dataset: str):
             dataset=dataset,
             file_path=file_path,
             format="auto",  # Auto-detect format
-            async_mode=True  # Return immediately with job ID
+            async_mode=True,  # Return immediately with job ID
         )
 
-        run_id = result['run_id']
+        run_id = result["run_id"]
         print(f"Job submitted! Run ID: {run_id}")
         print(f"Initial status: {result['status']}")
 
@@ -245,22 +249,24 @@ def async_upload_example(sdk: InfinoSDK, file_path: str, dataset: str):
 
         for i in range(max_polls):
             status = sdk.get_connector_job_status(run_id)
-            current_status = status.get('status', 'unknown')
+            current_status = status.get("status", "unknown")
 
             print(f"  Poll {i+1}: Status = {current_status}")
 
-            if current_status == 'completed':
+            if current_status == "completed":
                 print("\nJob completed successfully!")
-                
-                if status.get('stats'):
-                    stats = status['stats']
-                    print(f"Documents processed: {stats.get('documents_processed', 'N/A')}")
+
+                if status.get("stats"):
+                    stats = status["stats"]
+                    print(
+                        f"Documents processed: {stats.get('documents_processed', 'N/A')}"
+                    )
                     print(f"Documents failed: {stats.get('documents_failed', 'N/A')}")
                 return True
 
-            elif current_status == 'failed':
+            elif current_status == "failed":
                 print(f"\nJob failed!")
-                if status.get('errors'):
+                if status.get("errors"):
                     print(f"Errors: {status['errors']}")
                 return False
 
@@ -284,7 +290,9 @@ def main():
 
     # Check for credentials
     if ACCESS_KEY == "your_access_key":
-        print("Please set INFINO_ACCESS_KEY and INFINO_SECRET_KEY environment variables")
+        print(
+            "Please set INFINO_ACCESS_KEY and INFINO_SECRET_KEY environment variables"
+        )
         print("Or update the credentials in this script")
         print("\nExample:")
         print("  export INFINO_ACCESS_KEY='your_key'")
