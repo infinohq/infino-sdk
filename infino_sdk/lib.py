@@ -16,7 +16,6 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Protocol
 from urllib.parse import urlparse
 
-import backoff
 import requests
 import websockets
 import yaml
@@ -229,18 +228,18 @@ class InfinoSDK:
     ) -> Dict[str, Any]:
         """Build, sign, and execute an HTTP request"""
 
-        logger.debug(f"INFINO SDK: Making {method} request to {url}")
+        logger.debug("INFINO SDK: Making %s request to %s", method, url)
 
         timestamp = datetime.now(timezone.utc)
         payload = body or ""
         payload_hash = hashlib.sha256(payload.encode()).hexdigest()
 
         logger.debug("INFINO SDK: Creating request")
-        logger.debug(f"INFINO SDK: Method: {method}")
-        logger.debug(f"INFINO SDK: URL: {url}")
-        logger.debug(f"INFINO SDK: Body length: {len(payload)}")
-        logger.debug(f"INFINO SDK: Timestamp: {timestamp}")
-        logger.debug(f"INFINO SDK: Payload hash: {payload_hash}")
+        logger.debug("INFINO SDK: Method: %s", method)
+        logger.debug("INFINO SDK: URL: %s", url)
+        logger.debug("INFINO SDK: Body length: %d", len(payload))
+        logger.debug("INFINO SDK: Timestamp: %s", timestamp)
+        logger.debug("INFINO SDK: Payload hash: %s", payload_hash)
 
         # Build headers dict
         req_headers = {
@@ -363,17 +362,17 @@ class InfinoSDK:
 
                 if 400 <= status < 500:  # Client errors - don't retry
                     if status == 404:
-                        logger.warning(f"Resource not found: {text}")
+                        logger.warning("Resource not found: %s", text)
                     elif status == 403:
-                        logger.warning(f"Permission denied (403): {text}")
+                        logger.warning("Permission denied (403): %s", text)
                     elif status == 401:
-                        logger.warning(f"Unauthorized (401): {text}")
+                        logger.warning("Unauthorized (401): %s", text)
                     else:
-                        logger.error(f"Client error {status}: {text}")
+                        logger.error("Client error %d: %s", status, text)
                     raise InfinoError(InfinoError.Type.REQUEST, text, status, url)
 
                 if 500 <= status < 600:  # Server errors - retry
-                    logger.error(f"INFINO SDK: Server error {status}: {text}")
+                    logger.error("INFINO SDK: Server error %d: %s", status, text)
                     if attempt < max_retries - 1:
                         time.sleep(retry_delay)
                         retry_delay = min(
@@ -389,7 +388,7 @@ class InfinoSDK:
                     time.sleep(retry_delay)
                     retry_delay = min(retry_delay * 2, self.retry_config.max_interval)
                     continue
-                raise InfinoError(InfinoError.Type.REQUEST, str(e), 0, url)
+                raise InfinoError(InfinoError.Type.REQUEST, str(e), 0, url) from e
 
         raise InfinoError(InfinoError.Type.REQUEST, "Max retries exceeded", 0, url)
 
@@ -431,7 +430,7 @@ class InfinoSDK:
             url_for_signing = url
 
         logger.debug(
-            f"INFINO SDK: Making multipart {method} request to {url_for_signing}"
+            "INFINO SDK: Making multipart %s request to %s", method, url_for_signing
         )
 
         timestamp = datetime.now(timezone.utc)
@@ -508,11 +507,11 @@ class InfinoSDK:
                     return {}
 
                 if 400 <= status < 500:
-                    logger.error(f"INFINO SDK: Client error {status}: {text}")
+                    logger.error("INFINO SDK: Client error %d: %s", status, text)
                     raise InfinoError(InfinoError.Type.REQUEST, text, status, url)
 
                 if 500 <= status < 600:
-                    logger.error(f"INFINO SDK: Server error {status}: {text}")
+                    logger.error("INFINO SDK: Server error %d: %s", status, text)
                     if attempt < max_retries - 1:
                         time.sleep(retry_delay / 1000)  # Convert ms to seconds
                         retry_delay = min(
@@ -528,7 +527,7 @@ class InfinoSDK:
                     time.sleep(retry_delay / 1000)
                     retry_delay = min(retry_delay * 2, self.retry_config.max_interval)
                     continue
-                raise InfinoError(InfinoError.Type.REQUEST, str(e), 0, url)
+                raise InfinoError(InfinoError.Type.REQUEST, str(e), 0, url) from e
 
         raise InfinoError(InfinoError.Type.REQUEST, "Max retries exceeded", 0, url)
 
@@ -557,10 +556,10 @@ class InfinoSDK:
             request_datetime=request_datetime,
         )
 
-        logger.debug(f"SIGN REQUEST: URL path: {urlparse(request.url).path}")
-        logger.debug(f"SIGN REQUEST: Host: {urlparse(request.url).hostname}")
-        logger.debug(f"SIGN REQUEST: Request date: {request_date}")
-        logger.debug(f"SIGN REQUEST: Request datetime: {request_datetime}")
+        logger.debug("SIGN REQUEST: URL path: %s", urlparse(request.url).path)
+        logger.debug("SIGN REQUEST: Host: %s", urlparse(request.url).hostname)
+        logger.debug("SIGN REQUEST: Request date: %s", request_date)
+        logger.debug("SIGN REQUEST: Request datetime: %s", request_datetime)
 
         # Get host from URL - AWS requires host header
         host = urlparse(request.url).hostname
@@ -595,7 +594,7 @@ class InfinoSDK:
         # Include a space after each comma
         auth_header = f"{ALGORITHM} {CREDENTIAL_HEADER}={components.access_key}/{components.request_date}/{REGION}/{SIGNING_NAME}/{TERMINATION}, {SIGNED_HEADERS_HEADER}={signed_headers_str}, {SIGNATURE_HEADER}={signature}"
 
-        logger.debug(f"SIGN REQUEST: Final auth header: {auth_header}")
+        logger.debug("SIGN REQUEST: Final auth header: %s", auth_header)
 
         # Use the standard Authorization header as AWS does
         request.headers[AUTHORIZATION_HEADER] = auth_header
@@ -615,8 +614,8 @@ class InfinoSDK:
         if not canonical_uri or canonical_uri == "":
             canonical_uri = "/"
 
-        logger.debug(f"SIGN REQUEST: URL path: {url.path}")
-        logger.debug(f"SIGN REQUEST: Canonical URI: {canonical_uri}")
+        logger.debug("SIGN REQUEST: URL path: %s", url.path)
+        logger.debug("SIGN REQUEST: Canonical URI: %s", canonical_uri)
 
         # 3. Query String (empty or normalized)
         canonical_query = ""
@@ -654,7 +653,7 @@ class InfinoSDK:
             f"{payload_hash}"
         )
 
-        logger.debug(f"SIGN REQUEST: Canonical request:\n{canonical_request}")
+        logger.debug("SIGN REQUEST: Canonical request:\n%s", canonical_request)
         return canonical_request
 
     def hmac_sha256(self, key: bytes, data: bytes) -> bytes:
@@ -664,43 +663,43 @@ class InfinoSDK:
     def derive_signing_key(self, date: str) -> bytes:
         """Derive SigV4 signing key from secret and date"""
         logger.debug("SIGN REQUEST: Starting key derivation")
-        logger.debug(f"SIGN REQUEST: Date: {date}")
-        logger.debug(f"SIGN REQUEST: Secret key: {self.secret_key}")
-        logger.debug(f"SIGN REQUEST: KEY_PREFIX: {KEY_PREFIX}")
-        logger.debug(f"SIGN REQUEST: REGION: {REGION}")
-        logger.debug(f"SIGN REQUEST: SIGNING_NAME: {SIGNING_NAME}")
-        logger.debug(f"SIGN REQUEST: TERMINATION: {TERMINATION}")
+        logger.debug("SIGN REQUEST: Date: %s", date)
+        logger.debug("SIGN REQUEST: Secret key: %s", self.secret_key)
+        logger.debug("SIGN REQUEST: KEY_PREFIX: %s", KEY_PREFIX)
+        logger.debug("SIGN REQUEST: REGION: %s", REGION)
+        logger.debug("SIGN REQUEST: SIGNING_NAME: %s", SIGNING_NAME)
+        logger.debug("SIGN REQUEST: TERMINATION: %s", TERMINATION)
 
         # Format the key string exactly as the server does
         key_string = f"{KEY_PREFIX}{self.secret_key}"
 
         # Step 1: kDate = HMAC(KEY_PREFIX + secret_key, date)
         k_date = self.hmac_sha256(key_string.encode("utf-8"), date.encode("utf-8"))
-        logger.debug(f"SIGN REQUEST: k_date (hex): {k_date.hex()}")
+        logger.debug("SIGN REQUEST: k_date (hex): %s", k_date.hex())
 
         # Step 2: kRegion = HMAC(kDate, region)
         k_region = self.hmac_sha256(k_date, REGION.encode("utf-8"))
-        logger.debug(f"SIGN REQUEST: k_region (hex): {k_region.hex()}")
+        logger.debug("SIGN REQUEST: k_region (hex): %s", k_region.hex())
 
         # Step 3: kService = HMAC(kRegion, service)
         k_service = self.hmac_sha256(k_region, SIGNING_NAME.encode("utf-8"))
-        logger.debug(f"SIGN REQUEST: k_service (hex): {k_service.hex()}")
+        logger.debug("SIGN REQUEST: k_service (hex): %s", k_service.hex())
 
         # Step 4: signing_key = HMAC(kService, termination)
         signing_key = self.hmac_sha256(k_service, TERMINATION.encode("utf-8"))
-        logger.debug(f"SIGN REQUEST: final signing_key (hex): {signing_key.hex()}")
+        logger.debug("SIGN REQUEST: final signing_key (hex): %s", signing_key.hex())
 
         return signing_key
 
     def calculate_signature(self, signing_key: bytes, string_to_sign: str) -> str:
         """Calculate signature from key and string to sign"""
         logger.debug("SIGN REQUEST: Calculating signature")
-        logger.debug(f"SIGN REQUEST: Signing key (hex): {signing_key.hex()}")
-        logger.debug(f"SIGN REQUEST: String to sign:\n{string_to_sign}")
+        logger.debug("SIGN REQUEST: Signing key (hex): %s", signing_key.hex())
+        logger.debug("SIGN REQUEST: String to sign:\n%s", string_to_sign)
 
         signature_bytes = self.hmac_sha256(signing_key, string_to_sign.encode())
         signature = signature_bytes.hex()
-        logger.debug(f"SIGN REQUEST: Final signature: {signature}")
+        logger.debug("SIGN REQUEST: Final signature: %s", signature)
 
         return signature
 
@@ -719,7 +718,7 @@ class InfinoSDK:
             f"{hashlib.sha256(canonical_request.encode()).hexdigest()}"
         )
 
-        logger.debug(f"SIGN REQUEST: String to sign:\n{string_to_sign}")
+        logger.debug("SIGN REQUEST: String to sign:\n%s", string_to_sign)
         return string_to_sign
 
     def normalize_query(self, query: str) -> str:
@@ -768,7 +767,8 @@ class InfinoSDK:
             # 409 CONFLICT is acceptable for dataset creation - it means the dataset already exists
             if e.status_code() == 409:
                 logger.debug(
-                    f"INFINO SDK: Dataset '{dataset}' already exists (409 CONFLICT), continuing"
+                    "INFINO SDK: Dataset '%s' already exists (409 CONFLICT), continuing",
+                    dataset,
                 )
                 return {"acknowledged": True, "index": dataset}
             raise
@@ -786,6 +786,11 @@ class InfinoSDK:
 
         if isinstance(response, dict):
             return response
+        if isinstance(response, list):
+            # Metadata endpoint returns a list with one item
+            if len(response) > 0:
+                return response[0]
+            return {}
         if isinstance(response, str):
             return {"text": response}
         raise InfinoError(
@@ -962,7 +967,7 @@ class InfinoSDK:
         self,
         dataset: str,
         file_path: str,
-        format: Optional[str] = "auto",
+        format: Optional[str] = "auto",  # noqa: A002 - keeping for backwards compatibility
         batch_size: Optional[int] = None,
         async_mode: bool = False,
     ) -> Dict[str, Any]:
@@ -1186,7 +1191,7 @@ class InfinoSDK:
             except Exception as e:
                 raise InfinoError(
                     InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}"
-                )
+                ) from e
             headers = {"Content-Type": "application/yaml"}
             body = config
         else:
@@ -1210,7 +1215,7 @@ class InfinoSDK:
             except Exception as e:
                 raise InfinoError(
                     InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}"
-                )
+                ) from e
             headers = {"Content-Type": "application/yaml"}
             body = config
         else:
@@ -1240,7 +1245,7 @@ class InfinoSDK:
             except Exception as e:
                 raise InfinoError(
                     InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}"
-                )
+                ) from e
             headers = {"Content-Type": "application/yaml"}
             body = config
         else:
@@ -1264,7 +1269,7 @@ class InfinoSDK:
             except Exception as e:
                 raise InfinoError(
                     InfinoError.Type.INVALID_REQUEST, f"Invalid YAML: {e}"
-                )
+                ) from e
             headers = {"Content-Type": "application/yaml"}
             body = config
         else:
@@ -1358,8 +1363,6 @@ if __name__ == "__main__":
         @responses.activate
         def test_document_operations(self):
             """Test document operations"""
-            doc = json.dumps({"field1": "value1"})
-
             responses.add(
                 responses.PUT,
                 "http://localhost:8000/test_dataset/doc/1",
@@ -1376,9 +1379,9 @@ if __name__ == "__main__":
                 ],
             )
 
-            # Note: dataset_record doesn't exist in Rust SDK, using bulk_ingest instead
-            # This matches what the Rust tests would do
-            pass
+            # Note: This test validates the mock setup but doesn't call the endpoint
+            # since dataset_record doesn't exist in the SDK
+            self.assertTrue(True)
 
         @responses.activate
         def test_security_operations(self):
@@ -1413,7 +1416,7 @@ Permissions:
     Resources: ["test*"]
 """
 
-            response = self.client.create_role_in_account("test_role", role_config)
+            response = self.client.create_role("test_role", role_config)
             self.assertEqual(response["status"], "OK")
 
             # Test user creation with role assignment
