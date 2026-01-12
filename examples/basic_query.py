@@ -43,6 +43,13 @@ def main():
         print(f"Document count: {metadata.get('docs.count', 'N/A')}")
         print(f"Store size: {metadata.get('store.size', 'N/A')}")
 
+        # Get dataset schema
+        print("\n--- Dataset Schema ---")
+        schema = sdk.get_dataset_schema(dataset_name)
+        print("Fields:")
+        for field_name, field_info in schema.items():
+            print(f"  - {field_name}: {field_info.get('infino_type', 'unknown')}")
+
         # Match all query
         print("\n--- Match All Query ---")
         query = '{"query": {"match_all": {}}, "size": 5}'

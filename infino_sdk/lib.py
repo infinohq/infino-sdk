@@ -800,8 +800,8 @@ class InfinoSDK:
 
     def get_dataset_schema(self, dataset: str) -> Dict[str, Any]:
         """Query a dataset for its schema"""
-        url = f"{self.endpoint}/{dataset}/schema"
-        response = self.request("HEAD", url)
+        url = f"{self.endpoint}/{dataset}/_schema"
+        response = self.request("GET", url)
         return response
 
     def get_datasets(self) -> List[Dict[str, Any]]:

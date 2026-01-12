@@ -108,12 +108,32 @@
 ---
 
 ### get_dataset_schema
-**Description:** Query a dataset for its schema (field mappings).
+**Description:** Query a dataset for its schema (field mappings and types).
 
 **Input Parameters:**
 - `dataset` (str, required): The name of the dataset
 
-**Output:** Schema definition (structure varies based on dataset)
+**Output:**
+```json
+{
+  "@timestamp": {
+    "source": "Logs",
+    "infino_type": "ISO8601Date"
+  },
+  "name": {
+    "source": "Logs",
+    "infino_type": "String"
+  },
+  "price": {
+    "source": "Logs",
+    "infino_type": "Float"
+  }
+}
+```
+
+Each field contains:
+- `source`: The data source type
+- `infino_type`: The Infino data type (e.g., "ISO8601Date", "String", "Float", "Integer")
 
 ---
 
