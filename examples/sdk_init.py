@@ -9,7 +9,7 @@ import os
 from infino_sdk import InfinoError, InfinoSDK
 
 # Enable debug logging
-logging.basicConfig(level=logging.DEBUG, format='%(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format="%(levelname)s - %(message)s")
 
 print("=== INFINO SDK DEBUG ===\n")
 
@@ -18,8 +18,12 @@ access_key = os.environ.get("INFINO_ACCESS_KEY", "")
 secret_key = os.environ.get("INFINO_SECRET_KEY", "")
 endpoint = os.environ.get("INFINO_ENDPOINT", "")
 
-print(f"ACCESS_KEY: {'SET (' + str(len(access_key)) + ' chars)' if access_key else 'NOT SET'}")
-print(f"SECRET_KEY: {'SET (' + str(len(secret_key)) + ' chars)' if secret_key else 'NOT SET'}")
+print(
+    f"ACCESS_KEY: {'SET (' + str(len(access_key)) + ' chars)' if access_key else 'NOT SET'}"
+)
+print(
+    f"SECRET_KEY: {'SET (' + str(len(secret_key)) + ' chars)' if secret_key else 'NOT SET'}"
+)
 print(f"ENDPOINT: {endpoint}")
 print()
 

@@ -967,7 +967,9 @@ class InfinoSDK:
         self,
         dataset: str,
         file_path: str,
-        format: Optional[str] = "auto",  # noqa: A002 - keeping for backwards compatibility
+        format: Optional[
+            str
+        ] = "auto",  # noqa: A002 - keeping for backwards compatibility
         batch_size: Optional[int] = None,
         async_mode: bool = False,
     ) -> Dict[str, Any]:

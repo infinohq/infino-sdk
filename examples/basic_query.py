@@ -48,7 +48,9 @@ def main():
         query = '{"query": {"match_all": {}}, "size": 5}'
         results = sdk.query_dataset_in_querydsl(dataset_name, query)
         hits = results.get("hits", {}).get("hits", [])
-        print(f"Found {results.get('hits', {}).get('total', {}).get('value', 0)} records")
+        print(
+            f"Found {results.get('hits', {}).get('total', {}).get('value', 0)} records"
+        )
         for hit in hits[:3]:
             print(f"  - ID: {hit['_id']}, Score: {hit['_score']}")
 
