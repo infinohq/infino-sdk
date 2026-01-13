@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-01-13
+
+### Added
+- Comprehensive SDK method documentation (`docs/sdk_methods.md`)
+  - Detailed documentation for all SDK methods including parameters, return types, and examples
+  - API response format specifications
+- Enhanced examples with API response documentation
+  - New `sdk_init.py` example for SDK initialization patterns
+  - Expanded `file_upload.py` example with detailed response handling
+
+### Fixed
+- `get_dataset_schema()` method implementation
+  - Corrected API endpoint from `/{dataset}/schema` to `/{dataset}/_schema`
+  - Changed HTTP method from `HEAD` to `GET` for proper schema retrieval
+- Dataset metadata response processing
+  - Improved error handling and logging throughout SDK
+  - Fixed exception chaining for better error traceability
+  - Optimized logging format for better performance
+
+### Changed
+- Updated all examples with improved formatting and consistency
+- Enhanced error messages and logging output
+
 ## [0.4.0] - 2025-12-17
 
 ### Added
