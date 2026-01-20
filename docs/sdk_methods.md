@@ -437,7 +437,7 @@ Each field contains:
   "id": "00000000-0000-0000-0000-000000000001",
   "user_id": "user_1",
   "name": "test_auto_minimal_thread",
-  "status": "ongoing",
+  "status": "ongoing", // one of "ongoing" or "completed"
   "workflow_name": "fino-alpha-1",
   "created_at": "2025-12-16T12:18:07.714853+00:00",
   "updated_at": "2025-12-16T12:18:07.714853+00:00",
