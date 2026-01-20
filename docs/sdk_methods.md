@@ -422,7 +422,14 @@ Each field contains:
 **Description:** Create a new Fino thread.
 
 **Input Parameters:**
-- `config` (dict, required): Configuration dictionary for the thread
+- `config` (dict, required): Configuration dictionary for the thread. Contains the following items
+  - `name`: Name of the thread
+  - `streaming`: whether to start the thread in streaming mode
+
+** Sample Input: **
+```json
+{"name":"Detailed Dashboard","streaming":true}
+```
 
 **Output:**
 ```json
@@ -430,7 +437,7 @@ Each field contains:
   "id": "00000000-0000-0000-0000-000000000001",
   "user_id": "user_1",
   "name": "test_auto_minimal_thread",
-  "status": "ongoing",
+  "status": "ongoing", // one of "ongoing" or "completed"
   "workflow_name": "fino-alpha-1",
   "created_at": "2025-12-16T12:18:07.714853+00:00",
   "updated_at": "2025-12-16T12:18:07.714853+00:00",
