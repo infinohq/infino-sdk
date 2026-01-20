@@ -512,7 +512,19 @@ true
 
 **Input Parameters:**
 - `thread_id` (str, required): The ID of the thread
-- `message` (dict, required): The message object to add
+- `message` (dict, required): The message object to add. Should contain the following
+  - `role`: role of the message creator. One of "user", "assistant", "system"
+  - `content`: object containing the contents of the message. Contains 
+    - `user_message`: user query that fino answers
+  ** Sample message **
+  ```json
+  {
+    "role": "user",
+    "content": {
+      "user_message": "What is the sales trend for Q4"
+    }
+  }
+  ```
 
 **Output:**
 ```json
