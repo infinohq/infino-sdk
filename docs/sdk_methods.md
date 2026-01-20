@@ -422,7 +422,14 @@ Each field contains:
 **Description:** Create a new Fino thread.
 
 **Input Parameters:**
-- `config` (dict, required): Configuration dictionary for the thread
+- `config` (dict, required): Configuration dictionary for the thread. Contains the following items
+  - `name`: Name of the thread
+  - `streaming`: whether to start the thread in streaming mode
+
+** Sample Input: **
+```json
+{"name":"Detailed Dashboard","streaming":true}
+```
 
 **Output:**
 ```json
