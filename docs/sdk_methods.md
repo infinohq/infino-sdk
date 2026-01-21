@@ -424,11 +424,14 @@ Each field contains:
 **Input Parameters:**
 - `config` (dict, required): Configuration dictionary for the thread. Contains the following items
   - `name`: Name of the thread
+  - `sources`: Starts the thread in restricted mode. restricted mode restricts fino to only the specified indices. `sources` is a list where each item has
+    - `index_name`: Name of the index
+    - `connection_id`: id of the index source. Usually `infino`, but can be different in case of connectors
   - `streaming`: whether to start the thread in streaming mode
 
 ** Sample Input: **
 ```json
-{"name":"Detailed Dashboard","streaming":true}
+{"name":"Detailed Dashboard","sources": [{"index_name": "sample_flights", "connection_id": "infino" }],"streaming":true}
 ```
 
 **Output:**
