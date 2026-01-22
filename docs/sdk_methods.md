@@ -403,6 +403,8 @@ Each field contains:
 
 **Output:** WebSocket connection object
 
+> **Note:** When using streaming mode (`streaming: true` in thread config), see [Streaming Responses Documentation](./streaming_responses.md) for the complete response format and message types.
+
 ---
 
 ### list_threads
@@ -427,9 +429,9 @@ Each field contains:
   - `sources`: Starts the thread in restricted mode. restricted mode restricts fino to only the specified indices. `sources` is a list where each item has
     - `index_name`: Name of the index
     - `connection_id`: id of the index source. Usually `infino`, but can be different in case of connectors
-  - `streaming`: whether to start the thread in streaming mode
+  - `streaming`: whether to start the thread in streaming mode. When `true`, responses are delivered progressively via WebSocket. See [Streaming Responses Documentation](./streaming_responses.md) for the complete response format.
 
-** Sample Input: **
+**Sample Input:**
 ```json
 {"name":"Detailed Dashboard","sources": [{"index_name": "sample_flights", "connection_id": "infino" }],"streaming":true}
 ```
