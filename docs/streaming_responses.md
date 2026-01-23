@@ -430,7 +430,7 @@ Here's a complete Python example for handling streaming responses.
 > ```bash
 > export INFINO_ACCESS_KEY="your_key"
 > export INFINO_SECRET_KEY="your_secret"
-> python -m examples.fino.streaming_chat
+> python -m examples.fino_nl_chat.streaming_chat
 > ```
 
 ```python
