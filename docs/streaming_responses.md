@@ -18,12 +18,14 @@ Set `streaming: true` when creating a thread:
 config = {
     "name": "My Thread",
     "streaming": True,  # Enable streaming
-    "sources": [{"index_name": "my_dataset", "connection_id": "infino"}]
+    "sources": [{"index_name": "my_dataset", "connection_id": "infino"}]  # Optional
 }
 
 response = sdk.request("POST", f"{endpoint}/_conversation/threads", {}, json.dumps(config), {})
 thread_id = response["id"]
 ```
+
+> **Note:** The `sources` parameter is optional. When omitted, Infino uses **auto mode** to automatically determine the best index to query based on your question.
 
 The thread response will confirm streaming is enabled:
 
@@ -424,11 +426,11 @@ while True:
 
 Here's a complete Python example for handling streaming responses.
 
-> **Try it yourself:** See [`examples/fino_streaming_chat.py`](../examples/fino_streaming_chat.py) for a fully runnable example that you can execute with:
+> **Try it yourself:** See [`examples/fino_nl_chat/streaming_chat.py`](../examples/fino_nl_chat/streaming_chat.py) for a fully runnable example that you can execute with:
 > ```bash
 > export INFINO_ACCESS_KEY="your_key"
 > export INFINO_SECRET_KEY="your_secret"
-> python examples/fino_streaming_chat.py
+> python -m examples.fino.streaming_chat
 > ```
 
 ```python

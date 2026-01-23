@@ -56,50 +56,6 @@ Example 1 - Router starting:
     "created_at": "2025-12-17T11:17:29.214152+00:00"
 }
 
-Example 2 - Analyzing history:
-{
-    "content": {
-        "type": "update",
-        "sender": "history_analyzer",
-        "message": "Analyzing conversation context..."
-    },
-    "role": "assistant",
-    "created_at": "2025-12-17T11:17:29.349836+00:00"
-}
-
-Example 3 - Classifying intent:
-{
-    "content": {
-        "type": "update",
-        "sender": "intent_classifier",
-        "message": "Analyzing query intent..."
-    },
-    "role": "assistant",
-    "created_at": "2025-12-17T11:17:29.350536+00:00"
-}
-
-Example 4 - Selecting data source:
-{
-    "content": {
-        "type": "update",
-        "sender": "connection_selector",
-        "message": "Analyzing query to determine best data source from 3 available datasets..."
-    },
-    "role": "assistant",
-    "created_at": "2025-12-17T11:17:30.281848+00:00"
-}
-
-Example 5 - Formulating response:
-{
-    "content": {
-        "type": "update",
-        "sender": "chatbot",
-        "message": "Formulating response"
-    },
-    "role": "assistant",
-    "created_at": "2025-12-17T11:17:31.867349+00:00"
-}
-
 ----- TYPE 2: "result" (final response) -----
 
 This is the final message. Stop listening after receiving this.
@@ -107,23 +63,13 @@ This is the final message. Stop listening after receiving this.
 {
     "content": {
         "user_query": "Hello, I want to see what happened in the last 10 days",
-        "query_id": "7613ad54-8ab3-4917-b4b6-d4e2d65b36f4",
         "type": "result",
-        "user_intent": null,
-        "user_context": null,
-        "summary": "Hello! I can help you see what happened in the last 10 days. I found the following data sources available:\\n\\n1. **'application_logs'**: Contains application event logs with timestamps.\\n2. **'system_metrics'**: Contains system performance metrics over time.\\n\\nWhich data source would you like me to query?",
-        "data": {
-            "df": {},
-            "index_schema": null
-        },
+        "summary": "Hello! I can help you see what happened...",
+        "data": {"df": {}, "index_schema": null},
         "chart": {},
         "querydsl": {},
         "sql": "",
-        "followup_queries": [
-            "Show me recent error logs",
-            "What are the top events?",
-            "Show me a summary"
-        ]
+        "followup_queries": ["Show me recent error logs", ...]
     },
     "role": "assistant",
     "created_at": "2025-12-17T11:17:32.865712+00:00"
@@ -149,76 +95,21 @@ while True:
         break  # Stop listening
 
 ================================================================================
+
+Usage:
+    export INFINO_ACCESS_KEY="your_key"
+    export INFINO_SECRET_KEY="your_secret"
+    python examples/fino/websocket_chat.py
 """
 
 import asyncio
 import json
-import os
 import uuid
 
 from infino_sdk import InfinoSDK
 
-# =============================================================================
-# CONFIGURATION
-# =============================================================================
-
-
-def get_credentials():
-    """
-    Get API credentials from environment variables.
-
-    Required environment variables:
-    - INFINO_ACCESS_KEY: Your Infino access key
-    - INFINO_SECRET_KEY: Your Infino secret key
-    - INFINO_ENDPOINT: API endpoint (default: https://api.infino.ws)
-    """
-    access_key = os.environ.get("INFINO_ACCESS_KEY", "your_access_key_here")
-    secret_key = os.environ.get("INFINO_SECRET_KEY", "your_secret_key_here")
-    endpoint = os.environ.get("INFINO_ENDPOINT", "https://api.infino.ws")
-    return access_key, secret_key, endpoint
-
-
-# =============================================================================
-# HELPER FUNCTIONS
-# =============================================================================
-
-
-def create_thread(sdk: InfinoSDK, endpoint: str, name: str = None) -> str:
-    """
-    Create a new conversation thread via REST API.
-
-    Args:
-        sdk: InfinoSDK instance
-        endpoint: API endpoint URL
-        name: Optional thread name
-
-    Returns:
-        Thread ID string
-    """
-    if name is None:
-        name = f"Thread-{uuid.uuid4().hex[:8]}"
-
-    url = f"{endpoint}/_conversation/threads"
-    response = sdk.request(
-        method="POST", url=url, headers={}, body=json.dumps({"name": name}), params={}
-    )
-    return response["id"]
-
-
-def create_message(user_query: str) -> dict:
-    """
-    Create a message for the WebSocket API.
-
-    Args:
-        user_query: The user's question
-
-    Returns:
-        Message dictionary ready to send
-
-    Example:
-        {"content": {"user_query": "What happened yesterday?"}}
-    """
-    return {"content": {"user_query": user_query}}
+from .common import create_thread, get_credentials
+from .common.utils import create_message
 
 
 # =============================================================================
@@ -247,8 +138,10 @@ async def example_simple_connection():
         # Step 1: Create thread via REST API
         print("Creating conversation thread...")
         with InfinoSDK(access_key, secret_key, endpoint) as sdk_rest:
-            thread_id = create_thread(sdk_rest, endpoint, "Connection Test")
-        print(f"✓ Thread created: {thread_id}")
+            thread_id = create_thread(
+                sdk_rest, "Connection Test", streaming=False
+            )
+        print(f"Thread created: {thread_id}")
 
         # Step 2: Connect to WebSocket
         client_id = f"client-{uuid.uuid4().hex[:8]}"
@@ -260,15 +153,16 @@ async def example_simple_connection():
         print("Connecting to WebSocket...")
         sdk = InfinoSDK(access_key, secret_key, endpoint)
         ws = await asyncio.wait_for(
-            sdk.websocket_connect("/_conversation/ws", headers=ws_headers), timeout=10.0
+            sdk.websocket_connect("/_conversation/ws", headers=ws_headers),
+            timeout=10.0,
         )
 
-        print("✓ Connected successfully!")
+        print("Connected successfully!")
         print(f"  Thread ID: {thread_id}")
         print(f"  Client ID: {client_id}")
 
     except (ConnectionError, OSError, ValueError) as e:
-        print(f"✗ Error: {e}")
+        print(f"Error: {e}")
     finally:
         if ws:
             await ws.close()
@@ -303,8 +197,10 @@ async def example_query_response():
         # Step 1: Create thread
         print("Creating conversation thread...")
         with InfinoSDK(access_key, secret_key, endpoint) as sdk_rest:
-            thread_id = create_thread(sdk_rest, endpoint, "Query Test")
-        print(f"✓ Thread created: {thread_id}")
+            thread_id = create_thread(
+                sdk_rest, "Query Test", streaming=False
+            )
+        print(f"Thread created: {thread_id}")
 
         # Step 2: Connect to WebSocket
         client_id = f"client-{uuid.uuid4().hex[:8]}"
@@ -315,9 +211,10 @@ async def example_query_response():
 
         sdk = InfinoSDK(access_key, secret_key, endpoint)
         ws = await asyncio.wait_for(
-            sdk.websocket_connect("/_conversation/ws", headers=ws_headers), timeout=10.0
+            sdk.websocket_connect("/_conversation/ws", headers=ws_headers),
+            timeout=10.0,
         )
-        print("✓ Connected!")
+        print("Connected!")
 
         # Step 3: Send query
         query = "Hello, I want to see what happened in the last 10 days"
@@ -354,13 +251,13 @@ async def example_query_response():
                 if followups:
                     print("\nSuggested follow-ups:")
                     for q in followups[:3]:
-                        print(f"  • {q}")
+                        print(f"  - {q}")
                 break
 
     except asyncio.TimeoutError:
-        print("✗ Timeout waiting for response")
+        print("Timeout waiting for response")
     except (ConnectionError, OSError, ValueError) as e:
-        print(f"✗ Error: {e}")
+        print(f"Error: {e}")
     finally:
         if ws:
             await ws.close()
@@ -399,8 +296,10 @@ async def example_multi_turn():
         # Create thread
         print("Creating conversation thread...")
         with InfinoSDK(access_key, secret_key, endpoint) as sdk_rest:
-            thread_id = create_thread(sdk_rest, endpoint, "Multi-turn Chat")
-        print(f"✓ Thread created: {thread_id}")
+            thread_id = create_thread(
+                sdk_rest, "Multi-turn Chat", streaming=False
+            )
+        print(f"Thread created: {thread_id}")
 
         # Connect to WebSocket
         client_id = f"client-{uuid.uuid4().hex[:8]}"
@@ -411,9 +310,10 @@ async def example_multi_turn():
 
         sdk = InfinoSDK(access_key, secret_key, endpoint)
         ws = await asyncio.wait_for(
-            sdk.websocket_connect("/_conversation/ws", headers=ws_headers), timeout=10.0
+            sdk.websocket_connect("/_conversation/ws", headers=ws_headers),
+            timeout=10.0,
         )
-        print("✓ Connected!\n")
+        print("Connected!\n")
 
         # Send each query
         for i, query in enumerate(queries, 1):
@@ -439,19 +339,22 @@ async def example_multi_turn():
                 elif msg_type == "result":
                     summary = content.get("summary", "")
                     # Show first 300 chars of response
-                    display = summary[:300] + "..." if len(summary) > 300 else summary
+                    if len(summary) > 300:
+                        display = summary[:300] + "..."
+                    else:
+                        display = summary
                     print(f"\nResponse: {display}\n")
                     break
 
             # Small delay between queries
             await asyncio.sleep(1)
 
-        print("✓ Conversation complete!")
+        print("Conversation complete!")
 
     except asyncio.TimeoutError:
-        print("✗ Timeout")
+        print("Timeout")
     except (ConnectionError, OSError, ValueError) as e:
-        print(f"✗ Error: {e}")
+        print(f"Error: {e}")
     finally:
         if ws:
             await ws.close()
@@ -483,8 +386,10 @@ async def example_interactive_chat():
         # Create thread
         print("Creating conversation thread...")
         with InfinoSDK(access_key, secret_key, endpoint) as sdk_rest:
-            thread_id = create_thread(sdk_rest, endpoint, "Interactive Chat")
-        print(f"✓ Thread created: {thread_id}")
+            thread_id = create_thread(
+                sdk_rest, "Interactive Chat", streaming=False
+            )
+        print(f"Thread created: {thread_id}")
 
         # Connect
         client_id = f"client-{uuid.uuid4().hex[:8]}"
@@ -495,10 +400,11 @@ async def example_interactive_chat():
 
         sdk = InfinoSDK(access_key, secret_key, endpoint)
         ws = await asyncio.wait_for(
-            sdk.websocket_connect("/_conversation/ws", headers=ws_headers), timeout=10.0
+            sdk.websocket_connect("/_conversation/ws", headers=ws_headers),
+            timeout=10.0,
         )
 
-        print("✓ Connected!")
+        print("Connected!")
         print("\nType your questions below. Type 'quit' to exit.\n")
         print("-" * 40)
 
@@ -541,9 +447,9 @@ async def example_interactive_chat():
     except KeyboardInterrupt:
         print("\n\nChat interrupted.")
     except asyncio.TimeoutError:
-        print("\n✗ Timeout")
+        print("\nTimeout")
     except (ConnectionError, OSError, ValueError) as e:
-        print(f"\n✗ Error: {e}")
+        print(f"\nError: {e}")
     finally:
         if ws:
             await ws.close()
