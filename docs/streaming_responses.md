@@ -238,7 +238,7 @@ The generated SQL query that was executed.
 
 #### `chart` (object)
 
-Chart/visualization configuration for rendering graphs.
+Chart/visualization configuration for rendering graphs. **The chart configuration is an [Apache ECharts](https://echarts.apache.org/) option object** that can be passed directly to ECharts for rendering.
 
 ```json
 {
@@ -246,20 +246,66 @@ Chart/visualization configuration for rendering graphs.
   "sender": "visualization_agent",
   "sub_type": "chart",
   "value": {
-    "series": [
-      {"name": "Sales", "data": [10, 20, 30]}
-    ],
+    "title": {"text": "Orders Over Time"},
+    "tooltip": {"trigger": "axis"},
     "xAxis": {
-      "categories": ["Jan", "Feb", "Mar"]
+      "type": "category",
+      "data": ["01/15", "01/16", "01/17", "01/18", "01/19"]
     },
-    "chart": {
-      "type": "bar"
+    "yAxis": {"type": "value"},
+    "series": [
+      {
+        "name": "Order Count",
+        "type": "line",
+        "smooth": true,
+        "areaStyle": {},
+        "data": [5, 8, 12, 7, 15]
+      }
+    ],
+    "column_mapping": {
+      "xAxis": {"pandas_column": "order_date", "chart_label": "Date"},
+      "yAxis": [{"pandas_column": "count", "series_name": "Order Count", "chart_label": "Number of Orders"}]
     }
   }
 }
 ```
 
-**Handling:** Use this to render charts/visualizations. The structure follows common charting library formats.
+**Key fields in chart config:**
+
+| Field | Description |
+|-------|-------------|
+| `title` | Chart title configuration |
+| `xAxis` | X-axis configuration (type, data labels) |
+| `yAxis` | Y-axis configuration |
+| `series` | Data series with chart type (`line`, `bar`, `pie`, etc.) |
+| `tooltip` | Hover tooltip configuration |
+| `column_mapping` | Metadata about the data columns (useful for custom rendering) |
+
+**Rendering with ECharts:**
+
+The chart config can be rendered directly using the [ECharts JavaScript library](https://echarts.apache.org/en/index.html):
+
+```html
+<!-- Include ECharts from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+
+<div id="chart" style="width: 600px; height: 400px;"></div>
+
+<script>
+  // Initialize ECharts instance
+  const chart = echarts.init(document.getElementById('chart'));
+  
+  // chart_config is the value from the streaming response
+  chart.setOption(chart_config);
+</script>
+```
+
+**Resources:**
+- [ECharts Official Documentation](https://echarts.apache.org/en/option.html) - Full configuration reference
+- [ECharts Examples Gallery](https://echarts.apache.org/examples/en/index.html) - Interactive examples
+- [Chart Visualization Example](../examples/fino_nl_chat/chart_visualization.py) - Python example that renders charts in browser
+
+**Handling:** Parse the chart config and pass it to ECharts (or any compatible charting library) for visualization.
 
 #### `sources` (array)
 
@@ -605,5 +651,6 @@ elif msg_type == "EOM":
 ## See Also
 
 - [SDK Methods Documentation](./sdk_methods.md) - Full API reference
-- [WebSocket Chat Example](../examples/fino_websocket_chat.py) - Non-streaming example
-- [Streaming Chat Example](../examples/fino_streaming_chat.py) - Streaming example
+- [Streaming Chat Example](../examples/fino_nl_chat/streaming_chat.py) - Basic streaming example
+- [Chart Visualization Example](../examples/fino_nl_chat/chart_visualization.py) - Render ECharts in browser
+- [ECharts Documentation](https://echarts.apache.org/en/option.html) - Chart configuration reference
