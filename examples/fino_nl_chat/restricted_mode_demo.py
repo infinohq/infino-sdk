@@ -20,7 +20,7 @@ Both threads are asked:
 Usage:
     export INFINO_ACCESS_KEY="your_key"
     export INFINO_SECRET_KEY="your_secret"
-    python examples/fino/restricted_mode_demo.py
+    python examples/fino_nl_chat/restricted_mode_demo.py
 """
 
 from __future__ import annotations
