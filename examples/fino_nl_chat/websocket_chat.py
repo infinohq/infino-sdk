@@ -99,7 +99,7 @@ while True:
 Usage:
     export INFINO_ACCESS_KEY="your_key"
     export INFINO_SECRET_KEY="your_secret"
-    python examples/fino/websocket_chat.py
+    python examples/fino_nl_chat/websocket_chat.py
 """
 
 import asyncio
@@ -110,7 +110,6 @@ from infino_sdk import InfinoSDK
 
 from .common import create_thread, get_credentials
 from .common.utils import create_message
-
 
 # =============================================================================
 # EXAMPLE 1: SIMPLE CONNECTION TEST

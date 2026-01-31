@@ -8,7 +8,7 @@ documentation.
 Usage:
     export INFINO_ACCESS_KEY="your_key"
     export INFINO_SECRET_KEY="your_secret"
-    python examples/fino/streaming_chat.py
+    python examples/fino_nl_chat/streaming_chat.py
 """
 
 from __future__ import annotations
@@ -17,20 +17,14 @@ import asyncio
 import time
 import uuid
 
-from infino_sdk import InfinoError, InfinoSDK
 from websockets.exceptions import ConnectionClosed
 
-from .common import (
-    ACCESS_KEY,
-    CONNECTION_TIMEOUT,
-    ENDPOINT,
-    SECRET_KEY,
-    create_thread,
-    generate_bulk_payload,
-    handle_streaming_response,
-    setup_logging,
-    validate_credentials,
-)
+from infino_sdk import InfinoError, InfinoSDK
+
+from .common import (ACCESS_KEY, CONNECTION_TIMEOUT, ENDPOINT, SECRET_KEY,
+                     create_thread, generate_bulk_payload,
+                     handle_streaming_response, setup_logging,
+                     validate_credentials)
 
 # =============================================================================
 # SETUP
