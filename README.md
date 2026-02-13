@@ -183,7 +183,7 @@ Complete reference of SDK methods organized by category. Click any method to jum
 
 ## Connect – Access Data Sources
 
-Connect to data sources and query them in place without data movement.
+Connect to data sources and query them in place without data movement. For supported connectors and required configs, see [Connectors](docs/connectors.md).
 
 ### Discover Available Sources
 
@@ -203,9 +203,8 @@ for source in sources:
 ```python
 # Create connection to Elasticsearch
 connection_config = {
-    "connector_id": "elasticsearch",
-    "name": "Production ES Cluster",
     "config": {
+        "name": "Production ES Cluster",
         "host": "https://es-cluster.example.com:9200",
         "username": "elastic",
         "password": "secret"
@@ -223,8 +222,8 @@ print(f"Status: {status['status']}")
 
 # Update connection configuration
 updated_config = {
-    "name": "Production ES Cluster - Updated",
     "config": {
+        "name": "Production ES Cluster - Updated",
         "host": "https://new-es-cluster.example.com:9200",
         "username": "elastic",
         "password": "new_secret"

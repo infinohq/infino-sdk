@@ -133,6 +133,61 @@ Learn how to:
 python examples/error_handling.py
 ```
 
+### Connectors ([examples/connectors/](connectors/))
+**Connecting to external data sources**
+
+See [Connectors](../docs/connectors.md) for supported connectors and required configs.
+
+#### [basic_connections.py](connectors/basic_connections.py)
+**Connection lifecycle (discover, create, list, get, update, delete)**
+
+Learn how to:
+- Discover available data source types with `get_sources()`
+- Create connections for Elasticsearch, Snowflake, and BigQuery
+- List and inspect active connections
+- Update and delete connections
+
+```bash
+python examples/connectors/basic_connections.py
+```
+
+#### [query_elasticsearch.py](connectors/query_elasticsearch.py)
+**Query Elasticsearch/OpenSearch with QueryDSL**
+
+Learn how to:
+- Query external Elasticsearch indices via `query_source()`
+- Use QueryDSL (match_all, match, term, range, bool, aggregations)
+- Get source metadata with `get_source_metadata()`
+
+```bash
+python examples/connectors/query_elasticsearch.py
+```
+
+#### [query_sql_sources.py](connectors/query_sql_sources.py)
+**Query Snowflake and BigQuery with SQL**
+
+Learn how to:
+- Query Snowflake or BigQuery via `query_source()` with SQL strings
+- Get schema/metadata for SQL sources
+- Run SELECT, WHERE, and GROUP BY queries
+
+```bash
+python examples/connectors/query_sql_sources.py
+```
+
+#### [import_jobs.py](connectors/import_jobs.py)
+**Scheduled data imports from external sources**
+
+Learn how to:
+- Create import jobs with `create_import_job()`
+- List and monitor jobs with `get_import_jobs()`
+- Delete import jobs with `delete_import_job()`
+- Use cron schedules for recurring imports
+
+```bash
+python examples/connectors/import_jobs.py
+```
+
 ## Running Examples
 
 All examples can be run directly:
