@@ -374,7 +374,7 @@ class InfinoSDK:
                 if 500 <= status < 600:  # Server errors - retry
                     logger.error("INFINO SDK: Server error %d: %s", status, text)
                     if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
+                        time.sleep(retry_delay / 1000)
                         retry_delay = min(
                             retry_delay * 2, self.retry_config.max_interval
                         )
@@ -385,7 +385,7 @@ class InfinoSDK:
 
             except requests.RequestException as e:
                 if attempt < max_retries - 1 and "Connection refused" not in str(e):
-                    time.sleep(retry_delay)
+                    time.sleep(retry_delay / 1000)
                     retry_delay = min(retry_delay * 2, self.retry_config.max_interval)
                     continue
                 raise InfinoError(InfinoError.Type.REQUEST, str(e), 0, url) from e
