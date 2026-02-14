@@ -1148,15 +1148,25 @@ class InfinoSDK:
     def query_source(
         self, connection_id: str, dataset: str, query: str
     ) -> Dict[str, Any]:
-        """Query a data source connection in its native DSL"""
+        """Query a data source connection in its native DSL
+
+        For SQL sources (Snowflake, MySQL, etc.), the query should be a SQL string.
+        For QueryDSL sources (Elasticsearch, OpenSearch), the query should be a JSON string.
+        The query is automatically wrapped in {"query": "..."} format for the API.
+        """
         url = f"{self.endpoint}/source/{connection_id}/{dataset}/dsl"
-        response = self.request("GET", url, None, query)
+        headers = {"x-infino-connection-id": connection_id}
+        # Wrap query in JSON object as expected by connector service
+        query_body = json.dumps({"query": query})
+        # Use POST as recommended by OpenAPI spec for queries with request bodies
+        response = self.request("POST", url, headers, query_body)
         return response
 
     def get_source_metadata(self, connection_id: str, dataset: str) -> Dict[str, Any]:
         """Get metadata from a data source connection"""
         url = f"{self.endpoint}/source/{connection_id}/{dataset}/metadata"
-        response = self.request("GET", url)
+        headers = {"x-infino-connection-id": connection_id}
+        response = self.request("GET", url, headers)
         return response
 
     # Correlate Operations - Import Jobs

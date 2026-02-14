@@ -1,10 +1,11 @@
 # Infino API Documentation
 
-This folder contains the OpenAPI specification for the Infino API.
+This folder contains the OpenAPI specification for the Infino API and SDK documentation.
 
 ## Files
 
 - `openapi.yaml` - OpenAPI 3.1.0 specification
+- [connectors.md](connectors.md) - Connectors: supported sources, SDK usage, and how to find required configs
 
 ## Viewing the API Documentation Locally
 
