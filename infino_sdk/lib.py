@@ -1149,7 +1149,7 @@ class InfinoSDK:
         self, connection_id: str, dataset: str, query: str
     ) -> Dict[str, Any]:
         """Query a data source connection in its native DSL
-        
+
         For SQL sources (Snowflake, MySQL, etc.), the query should be a SQL string.
         For QueryDSL sources (Elasticsearch, OpenSearch), the query should be a JSON string.
         The query is automatically wrapped in {"query": "..."} format for the API.
