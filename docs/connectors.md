@@ -9,7 +9,9 @@ Connectors let you access external data sources **without moving data**. You cre
 - **Query** the source in place (e.g. QueryDSL for Elasticsearch, SQL for Snowflake)
 - **Import** data from the source into Infino datasets on a schedule
 
-The SDK talks to the Infino API, which in turn uses the [Infino connector service](https://github.com/infinohq/infino) to manage connections and run queries or imports. The authoritative definition of each connector—including required and optional config fields—lives in that service.
+**How it works:** Create a connection with `create_connection(source_type, config)` (e.g. Snowflake, BigQuery, Elasticsearch). Use the returned `connection_id` with `query_source(connection_id, dataset, query)` to run queries in the source’s native language, or with `create_import_job()` to schedule imports into Infino datasets. The [connector examples](../examples/connectors/) are runnable with the env vars described in this doc and in [examples/README.md](../examples/README.md).
+
+The SDK talks to the Infino API, which manages connections and runs queries or imports.
 
 ## SDK surface
 
@@ -38,8 +40,8 @@ The SDK talks to the Infino API, which in turn uses the [Infino connector servic
 
 ### Querying a connected source
 
-- **`query_source(connection_id, dataset, query)`** — Run a query in the source's native language. For Elasticsearch/OpenSearch the `query` is a QueryDSL JSON string; for Snowflake/BigQuery it is a SQL string. `dataset` is the index name (ES) or table/dataset name (SQL). The SDK automatically wraps the query in `{"query": "..."}` format and adds the required `x-infino-connection-id` header. Uses POST method as recommended by the API. **Note:** SQL source querying (Snowflake, BigQuery) is currently not fully supported due to backend routing limitations.
-- **`get_source_metadata(connection_id, dataset)`** — Get metadata (e.g. schema, mappings) for the given dataset/index in the connected source. The SDK automatically adds the required `x-infino-connection-id` header.
+- **`query_source(connection_id, dataset, query)`** — Run a query in the source's native language. For Elasticsearch/OpenSearch the `query` is a QueryDSL JSON string and `dataset` is the **index name**. For Snowflake/BigQuery the `query` is a SQL string and `dataset` is the **database name** (query scope); table names go in the SQL (e.g. `SELECT * FROM my_table`). The SDK wraps the query in `{"query": "..."}` and adds the `x-infino-connection-id` header. Uses POST.
+- **`get_source_metadata(connection_id, dataset)`** — Get metadata (schema, mappings, etc.) for the given scope. Use the same `dataset` as for queries: index name for ES/OpenSearch, database name for Snowflake/BigQuery.
 
 ### Import jobs
 
@@ -56,7 +58,7 @@ See the main [README](../README.md) and [SDK methods](sdk_methods.md) for detail
 
 ## Request and Response Formats
 
-This section documents the request and response structures for connector operations. These formats are defined by the [Infino connector service](https://github.com/infinohq/infino) and are the source of truth.
+This section documents the request and response structures for connector operations.
 
 ### `get_source_metadata()` Request and Response
 
@@ -216,4 +218,19 @@ The following is a short reference derived from the connector service schemas. F
 - [examples/connectors/query_sql_sources.py](../examples/connectors/query_sql_sources.py) — Query Snowflake/BigQuery with SQL.
 - [examples/connectors/import_jobs.py](../examples/connectors/import_jobs.py) — Create, list, and delete import jobs.
 
-See [examples/README.md](../examples/README.md) for how to run them.
+### Running the connector examples
+
+All connector examples need Infino credentials:
+
+```bash
+export INFINO_ACCESS_KEY="your_access_key"
+export INFINO_SECRET_KEY="your_secret_key"
+export INFINO_ENDPOINT="https://api.infino.ws"
+```
+
+- **basic_connections.py** — Optional: set `SNOWFLAKE_*`, `BIGQUERY_*`, or `ELASTICSEARCH_*` env vars to create real connections; otherwise it discovers sources and lists existing connections.
+- **query_sql_sources.py** — Requires a SQL connection id and database name: `SQL_CONNECTION_ID`, `SQL_DATASET` (or `SNOWFLAKE_DATABASE`). Optional: `SQL_TABLE_NAME` for the example table used in the SQL (default `sales_data`). For Snowflake, `SQL_DATASET` is the **database name**, not the table name.
+- **query_elasticsearch.py** — Requires `ES_CONNECTION_ID` and `ES_INDEX` (the index name).
+- **import_jobs.py** — Requires a connection id and job config; see the script for env vars.
+
+See [examples/README.md](../examples/README.md) for full run instructions.
