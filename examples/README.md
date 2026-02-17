@@ -136,7 +136,16 @@ python examples/error_handling.py
 ### Connectors ([examples/connectors/](connectors/))
 **Connecting to external data sources**
 
-See [Connectors](../docs/connectors.md) for supported connectors and required configs.
+Create connections to external sources (Elasticsearch, Snowflake, BigQuery), then query them in place or run import jobs. See [Connectors](../docs/connectors.md) for supported connectors and request/response formats.
+
+**Required for all connector examples:** `INFINO_ACCESS_KEY`, `INFINO_SECRET_KEY`, `INFINO_ENDPOINT`
+
+| Example | Required env vars | Notes |
+|--------|--------------------|-------|
+| basic_connections | (optional) `SNOWFLAKE_*`, `BIGQUERY_*`, `ELASTICSEARCH_*` | Creates real connections only if set; otherwise discovers sources and lists connections |
+| query_sql_sources | `SQL_CONNECTION_ID`, `SQL_DATASET` (or `SNOWFLAKE_DATABASE`) | For Snowflake/BigQuery, **dataset = database name**; table name goes in the SQL |
+| query_elasticsearch | `ES_CONNECTION_ID`, `ES_INDEX` | `ES_INDEX` is the index name |
+| import_jobs | Connection id and job config (see script) | See script docstring for env vars |
 
 #### [basic_connections.py](connectors/basic_connections.py)
 **Connection lifecycle (discover, create, list, get, update, delete)**
@@ -160,6 +169,8 @@ Learn how to:
 - Get source metadata with `get_source_metadata()`
 
 ```bash
+export ES_CONNECTION_ID="<connection_id>"
+export ES_INDEX="<index_name>"
 python examples/connectors/query_elasticsearch.py
 ```
 
@@ -168,10 +179,13 @@ python examples/connectors/query_elasticsearch.py
 
 Learn how to:
 - Query Snowflake or BigQuery via `query_source()` with SQL strings
-- Get schema/metadata for SQL sources
+- Get schema/metadata for SQL sources (use **database name** as `dataset`)
 - Run SELECT, WHERE, and GROUP BY queries
 
 ```bash
+export SQL_CONNECTION_ID="<connection_id>"
+export SQL_DATASET="<database_name>"   # e.g. BUSINESS_DATA for Snowflake
+export SQL_TABLE_NAME="sales_data"     # optional; used in example SQL 
 python examples/connectors/query_sql_sources.py
 ```
 

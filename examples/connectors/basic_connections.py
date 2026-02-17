@@ -188,7 +188,7 @@ def main():
                 new_name = (status.get("config") or {}).get("name") or status.get("name") or ""
                 if not new_name:
                     new_name = "Updated " + cid[:8]
-                update_config = {"name": new_name}
+                update_config = {"config": {"name": new_name}}
                 sdk.update_connection(cid, update_config)
                 logger.info("  Updated connection %s name", cid)
             except InfinoError as e:
