@@ -3,15 +3,15 @@
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Official Python SDK for [Infino](https://infino.ai) - the context engine for your data stack.
+Official Python SDK for [Infino](https://infino.ai) - an agentic search engine.
 
-**Infino** provides an intelligent unification layer for your data stack. Query Elasticsearch, OpenSearch, Snowflake, and other data sources in natural language, SQL, QueryDSL, or PromQL. Bring diverse data sources together for deeper analysis—no ETL required. Control access via fine-grained RBAC. All through one unified API. 
+**Infino** is a governed, agentic search engine. Query Elasticsearch, OpenSearch, Snowflake, and other data sources in natural language, SQL, QueryDSL, or PromQL. Bring diverse data sources together for deeper analysis—no ETL required. Control access via fine-grained RBAC. All through one unified API. 
 
 **Built for**:
 - **Connect**: Access your data sources without data movement
 - **Query**: Natural language, SQL, Query DSL, and PromQL across all sources
 - **Correlate**: Pull together data from different sources for cross-source correlation
-- **Govern**: Fine-grained RBAC for your entire data stack
+- **Govern**: Fine-grained RBAC for all your data
 
 ## Table of Contents
 
