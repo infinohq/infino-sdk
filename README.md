@@ -344,7 +344,7 @@ async def query_with_fino():
     sdk = InfinoSDK(access_key, secret_key, endpoint)
     
     # Connect to Fino WebSocket
-    ws = await sdk.websocket_connect("/_conversation/ws")
+    ws = await sdk.websocket_connect("/fino/nl")
     
     try:
         # Send your question
