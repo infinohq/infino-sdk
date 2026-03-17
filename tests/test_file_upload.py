@@ -212,7 +212,7 @@ class TestGetConnectorJobStatus:
 
             call_args = mock.call_args
             assert call_args[0][0] == "GET"
-            assert call_args[0][1] == "http://localhost:8000/_connectors/jobs/my-job-id"
+            assert call_args[0][1] == "http://localhost:8000/import/jobs/my-job-id"
 
 
 class TestRequestMultipart:
