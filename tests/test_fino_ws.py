@@ -19,7 +19,9 @@ def _make_sdk():
     retry_config.initial_interval = 10
     retry_config.max_interval = 10
 
-    sdk = InfinoSDK("test_access", "test_secret", "https://test.infino.ws", retry_config)
+    sdk = InfinoSDK(
+        "test_access", "test_secret", "https://test.infino.ws", retry_config
+    )
 
     mock_session = MagicMock()
     thread_response = Mock()
@@ -61,20 +63,24 @@ class TestQueryFinoNl:
         """Test NL query receiving a search-style result message"""
         sdk = _make_sdk()
 
-        result_msg = json.dumps({
-            "role": "assistant",
-            "content": {
-                "type": "result",
-                "summary": "There were 42 errors in the last hour.",
-                "data": {"count": 42},
-                "querydsl": {"query": {"match_all": {}}},
-                "sql": None,
-            },
-        })
+        result_msg = json.dumps(
+            {
+                "role": "assistant",
+                "content": {
+                    "type": "result",
+                    "summary": "There were 42 errors in the last hour.",
+                    "data": {"count": 42},
+                    "querydsl": {"query": {"match_all": {}}},
+                    "sql": None,
+                },
+            }
+        )
 
         fake_ws = FakeWebSocket([result_msg])
 
-        with patch.object(sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws):
+        with patch.object(
+            sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws
+        ):
             result = await sdk.query_fino_nl("How many errors in the last hour?")
 
         assert result["answer"] == "There were 42 errors in the last hour."
@@ -87,17 +93,21 @@ class TestQueryFinoNl:
         """Test NL query receiving an error response"""
         sdk = _make_sdk()
 
-        error_msg = json.dumps({
-            "role": "assistant",
-            "content": {
-                "type": "error",
-                "error_message": "No dataset found",
-            },
-        })
+        error_msg = json.dumps(
+            {
+                "role": "assistant",
+                "content": {
+                    "type": "error",
+                    "error_message": "No dataset found",
+                },
+            }
+        )
 
         fake_ws = FakeWebSocket([error_msg])
 
-        with patch.object(sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws):
+        with patch.object(
+            sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws
+        ):
             with pytest.raises(InfinoError) as exc_info:
                 await sdk.query_fino_nl("query something")
 
@@ -108,14 +118,18 @@ class TestQueryFinoNl:
         """Test that NL query sends the correct search-handler format"""
         sdk = _make_sdk()
 
-        result_msg = json.dumps({
-            "role": "assistant",
-            "content": {"type": "message", "summary": "ok", "data": {}},
-        })
+        result_msg = json.dumps(
+            {
+                "role": "assistant",
+                "content": {"type": "message", "summary": "ok", "data": {}},
+            }
+        )
 
         fake_ws = FakeWebSocket([result_msg])
 
-        with patch.object(sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws):
+        with patch.object(
+            sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws
+        ):
             await sdk.query_fino_nl("test query")
 
         assert len(fake_ws._sent) == 1
@@ -136,16 +150,20 @@ class TestQueryFinoAnalyze:
         """Test analyze query collecting responses until EOM"""
         sdk = _make_sdk()
 
-        action_msg = json.dumps({
-            "type": "analyze_action",
-            "action": "create_cell",
-            "cell": {"code": "SELECT COUNT(*) FROM logs"},
-        })
+        action_msg = json.dumps(
+            {
+                "type": "analyze_action",
+                "action": "create_cell",
+                "cell": {"code": "SELECT COUNT(*) FROM logs"},
+            }
+        )
         eom_msg = json.dumps({"type": "EOM"})
 
         fake_ws = FakeWebSocket([action_msg, eom_msg])
 
-        with patch.object(sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws):
+        with patch.object(
+            sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws
+        ):
             result = await sdk.query_fino_analyze("Analyze error trends")
 
         assert "responses" in result
@@ -161,7 +179,9 @@ class TestQueryFinoAnalyze:
         eom_msg = json.dumps({"type": "EOM"})
         fake_ws = FakeWebSocket([eom_msg])
 
-        with patch.object(sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws):
+        with patch.object(
+            sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws
+        ):
             await sdk.query_fino_analyze("analyze this")
 
         assert len(fake_ws._sent) == 1
@@ -177,14 +197,18 @@ class TestQueryFinoAnalyze:
         """Test analyze query receiving a top-level error message"""
         sdk = _make_sdk()
 
-        error_msg = json.dumps({
-            "type": "error",
-            "message": "Analysis failed: no data sources",
-        })
+        error_msg = json.dumps(
+            {
+                "type": "error",
+                "message": "Analysis failed: no data sources",
+            }
+        )
 
         fake_ws = FakeWebSocket([error_msg])
 
-        with patch.object(sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws):
+        with patch.object(
+            sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws
+        ):
             with pytest.raises(InfinoError) as exc_info:
                 await sdk.query_fino_analyze("analyze something")
 
@@ -199,16 +223,22 @@ class TestGenerateNotebookReport:
         """Test report generation returning a summary"""
         sdk = _make_sdk()
 
-        partial_msg = json.dumps({
-            "type": "partial",
-            "sub_type": "summary",
-            "value": "## Executive Summary\n\nThe analysis shows...",
-        })
+        partial_msg = json.dumps(
+            {
+                "type": "partial",
+                "sub_type": "summary",
+                "value": "## Executive Summary\n\nThe analysis shows...",
+            }
+        )
 
         fake_ws = FakeWebSocket([partial_msg])
 
-        with patch.object(sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws):
-            report = await sdk.generate_notebook_report("nb-001", report_type="executive")
+        with patch.object(
+            sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws
+        ):
+            report = await sdk.generate_notebook_report(
+                "nb-001", report_type="executive"
+            )
 
         assert "Executive Summary" in report
         assert fake_ws._closed
@@ -221,7 +251,9 @@ class TestGenerateNotebookReport:
         eom_msg = json.dumps({"type": "EOM"})
         fake_ws = FakeWebSocket([eom_msg])
 
-        with patch.object(sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws):
+        with patch.object(
+            sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws
+        ):
             report = await sdk.generate_notebook_report("nb-002")
 
         assert report == ""
@@ -231,13 +263,17 @@ class TestGenerateNotebookReport:
         """Test report generation error"""
         sdk = _make_sdk()
 
-        error_msg = json.dumps({
-            "type": "error",
-            "error_message": "Notebook not found",
-        })
+        error_msg = json.dumps(
+            {
+                "type": "error",
+                "error_message": "Notebook not found",
+            }
+        )
         fake_ws = FakeWebSocket([error_msg])
 
-        with patch.object(sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws):
+        with patch.object(
+            sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws
+        ):
             with pytest.raises(InfinoError) as exc_info:
                 await sdk.generate_notebook_report("nb-999")
 
@@ -256,7 +292,9 @@ class TestGenerateNotebookReport:
             "user_requests": "Summarize error trends",
         }
 
-        with patch.object(sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws):
+        with patch.object(
+            sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws
+        ):
             await sdk.generate_notebook_report(
                 "nb-003", report_type="short", analysis_cache=cache
             )
@@ -276,7 +314,9 @@ class TestGenerateNotebookReport:
         eom_msg = json.dumps({"type": "EOM"})
         fake_ws = FakeWebSocket([eom_msg])
 
-        with patch.object(sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws):
+        with patch.object(
+            sdk, "websocket_connect", new_callable=AsyncMock, return_value=fake_ws
+        ):
             await sdk.generate_notebook_report("nb-004")
 
         sent = json.loads(fake_ws._sent[0])

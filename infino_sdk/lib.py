@@ -410,7 +410,9 @@ class InfinoSDK:
         else:
             url_for_signing = url
 
-        logger.debug(f"INFINO SDK: Making multipart {method} request to {url_for_signing}")
+        logger.debug(
+            f"INFINO SDK: Making multipart {method} request to {url_for_signing}"
+        )
 
         timestamp = datetime.now(timezone.utc)
         payload_hash = UNSIGNED_PAYLOAD
@@ -931,7 +933,11 @@ class InfinoSDK:
 
                 msg_type = data.get("type", "")
 
-                if msg_type == "partial" and data.get("sub_type") == "summary" and data.get("value"):
+                if (
+                    msg_type == "partial"
+                    and data.get("sub_type") == "summary"
+                    and data.get("value")
+                ):
                     await ws.close()
                     return str(data["value"])
 
@@ -947,9 +953,7 @@ class InfinoSDK:
                     return ""
         except asyncio.TimeoutError:
             await ws.close()
-            raise InfinoError(
-                InfinoError.Type.TIMEOUT, "Report generation timed out"
-            )
+            raise InfinoError(InfinoError.Type.TIMEOUT, "Report generation timed out")
 
         await ws.close()
         return ""
@@ -1201,9 +1205,7 @@ class InfinoSDK:
         response = self.request("GET", url)
         return response
 
-    def query_remote_source_sql(
-        self, connection_id: str, query: str
-    ) -> Dict[str, Any]:
+    def query_remote_source_sql(self, connection_id: str, query: str) -> Dict[str, Any]:
         """Query a remote data source connection using SQL"""
         url = f"{self.endpoint}/source/{connection_id}/sql"
         response = self.request("POST", url, body=json.dumps({"query": query}))
@@ -1226,9 +1228,7 @@ class InfinoSDK:
             return response
         if isinstance(response, dict):
             return response.get("datasets", [response])
-        raise InfinoError(
-            InfinoError.Type.INVALID_REQUEST, "Expected list of datasets"
-        )
+        raise InfinoError(InfinoError.Type.INVALID_REQUEST, "Expected list of datasets")
 
     def get_connector_job_status(self, job_id: str) -> Dict[str, Any]:
         """Get detailed status for a specific import job"""
@@ -1417,9 +1417,7 @@ class InfinoSDK:
         return response
 
     # Role Mapping Operations
-    def create_role_mapping(
-        self, name: str, config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def create_role_mapping(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Create a role mapping in your account"""
         url = f"{self.endpoint}/rolemapping/{name}"
         response = self.request("PUT", url, body=json.dumps(config))
@@ -1431,9 +1429,7 @@ class InfinoSDK:
         response = self.request("GET", url)
         return response
 
-    def update_role_mapping(
-        self, name: str, config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def update_role_mapping(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Update a role mapping"""
         url = f"{self.endpoint}/rolemapping/{name}"
         response = self.request("PATCH", url, body=json.dumps(config))
@@ -1452,9 +1448,7 @@ class InfinoSDK:
         return response
 
     # Account & Auth Operations
-    def update_user_password(
-        self, username: str, new_password: str
-    ) -> Dict[str, Any]:
+    def update_user_password(self, username: str, new_password: str) -> Dict[str, Any]:
         """Update a user's password"""
         url = f"{self.endpoint}/user/{username}/password"
         payload = {"password": new_password}

@@ -62,7 +62,9 @@ class TestRoleMappings:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({"status": "OK", "message": "'my_mapping' updated."})
+        mock_response.text = json.dumps(
+            {"status": "OK", "message": "'my_mapping' updated."}
+        )
         sdk.session.request.return_value = mock_response
 
         config = {"roles": ["read_only"]}
@@ -77,7 +79,9 @@ class TestRoleMappings:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({"status": "OK", "message": "'my_mapping' deleted."})
+        mock_response.text = json.dumps(
+            {"status": "OK", "message": "'my_mapping' deleted."}
+        )
         sdk.session.request.return_value = mock_response
 
         result = sdk.delete_role_mapping("my_mapping")
@@ -116,7 +120,9 @@ class TestAccountAuth:
 
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.text = json.dumps({"status": "OK", "message": "Password updated."})
+        mock_response.text = json.dumps(
+            {"status": "OK", "message": "Password updated."}
+        )
         sdk.session.request.return_value = mock_response
 
         result = sdk.update_user_password("alice", "NewP@ssw0rd!")

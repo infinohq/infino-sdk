@@ -19,7 +19,10 @@ def test_query_remote_source_sql(sdk_with_mock_session, mock_response):
     sdk = sdk_with_mock_session
 
     sql_response = {
-        "columns": [{"name": "id", "type": "integer"}, {"name": "name", "type": "text"}],
+        "columns": [
+            {"name": "id", "type": "integer"},
+            {"name": "name", "type": "text"},
+        ],
         "rows": [[1, "Alice"], [2, "Bob"]],
         "total": 2,
     }
@@ -112,9 +115,7 @@ def test_upload_file(sdk_with_mock_session, mock_response):
 
     upload_response = {"job_id": "file-upload-001", "status": "completed"}
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".csv", delete=False
-    ) as tmp:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as tmp:
         tmp.write("name,value\nAlice,100\nBob,200\n")
         tmp_path = tmp.name
 
@@ -141,9 +142,7 @@ def test_upload_file_async(sdk_with_mock_session, mock_response):
 
     upload_response = {"run_id": "file-upload-002", "status": "submitted"}
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", delete=False
-    ) as tmp:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
         tmp.write('[{"key": "val"}]')
         tmp_path = tmp.name
 
