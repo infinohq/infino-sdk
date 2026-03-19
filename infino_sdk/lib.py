@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Callable, Dict, List, Optional, Protocol
 from urllib.parse import urlparse
 
 import backoff
@@ -121,6 +121,204 @@ class _RequestLike(Protocol):
     headers: Dict[str, str]
 
 
+class FinoWebSocketClient:
+    """Persistent per-thread WebSocket client for Fino AI conversations.
+
+    Maintains one long-lived connection per thread:
+
+    - Auto-reconnects with exponential backoff on unexpected close.
+    - Queues outbound messages while the socket is (re)connecting.
+    - Re-sends the last in-flight message after a successful reconnect so no
+      query is silently dropped.
+
+    Use ``ws_path="/fino/nl"`` for natural language Q&A and
+    ``ws_path="/fino/analyze"`` for multi-step analytical investigations.
+
+    .. note::
+        ``/fino/analyze`` support is **beta — under active development**.
+        The streaming frame types and message format may change in future
+        releases.
+
+    Usage::
+
+        sdk = InfinoSDK(access_key, secret_key, endpoint)
+        thread = await sdk.create_thread(name="my-session")
+        client = FinoWebSocketClient(sdk, thread_id=thread["id"], ws_path="/fino/nl", client_id="my-app")
+        await client.connect()
+
+        def handle(frame: dict) -> None:
+            print(frame)
+
+        unsub = client.on_frame(handle)
+        client.send({"content": {"user_query": "hello", "type": "user"}, ...})
+
+        # Tear down when done:
+        unsub()
+        await client.close()
+    """
+
+    _MAX_RECONNECT_ATTEMPTS = 10
+    _RECONNECT_DELAY_SECS = 2.0
+
+    def __init__(self, sdk: "InfinoSDK", thread_id: str, ws_path: str, client_id: str) -> None:
+        self._sdk = sdk
+        self._thread_id = thread_id
+        self._ws_path = ws_path
+        self._client_id = client_id
+        self._ws: Any = None
+        self._frame_handlers: List[Callable[[Dict[str, Any]], None]] = []
+        self._intentionally_closed = False
+        self._reconnect_attempts = 0
+        self._pending_messages: List[str] = []
+        self._last_sent_message: Optional[str] = None
+        self._has_active_request = False
+        self._receive_task: Optional[Any] = None  # asyncio.Task
+
+    def _full_path(self) -> str:
+        return (
+            f"{self._ws_path}"
+            f"?threadId={urllib.parse.quote(self._thread_id, safe='')}"
+            f"&clientId={urllib.parse.quote(self._client_id, safe='')}"
+        )
+
+    async def connect(self) -> None:
+        """Open the WebSocket and start the background receive loop."""
+        import asyncio
+
+        if self._intentionally_closed:
+            return
+
+        try:
+            self._ws = await self._sdk.websocket_connect(self._full_path())
+        except Exception:
+            await self._schedule_reconnect()
+            return
+
+        # Flush pending messages
+        if self._has_active_request and self._last_sent_message:
+            msg = self._last_sent_message
+            self._has_active_request = False
+            self._last_sent_message = None
+            await asyncio.sleep(0.1)
+            if self._ws is not None:
+                try:
+                    await self._ws.send(msg)
+                    self._has_active_request = True
+                    self._last_sent_message = msg
+                except Exception:
+                    pass
+
+        for msg in self._pending_messages:
+            try:
+                await self._ws.send(msg)
+            except Exception:
+                pass
+        self._pending_messages.clear()
+        self._reconnect_attempts = 0
+
+        self._receive_task = asyncio.create_task(self._receive_loop())
+
+    async def _receive_loop(self) -> None:
+        """Background task: read frames and dispatch to handlers."""
+        try:
+            async for raw in self._ws:
+                try:
+                    frame = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+                if frame.get("type") == "heartbeat":
+                    continue
+
+                for handler in list(self._frame_handlers):
+                    try:
+                        handler(frame)
+                    except Exception:
+                        pass
+
+                # Clear active-request flag on final frame
+                content_type = (frame.get("content") or {}).get("type", "")
+                if content_type in ("result", "EOM") or frame.get("type") == "EOM":
+                    self._has_active_request = False
+                    self._last_sent_message = None
+
+        except Exception:
+            pass
+        finally:
+            self._ws = None
+            if not self._intentionally_closed:
+                await self._schedule_reconnect()
+
+    async def _schedule_reconnect(self) -> None:
+        import asyncio
+
+        if self._intentionally_closed or self._reconnect_attempts >= self._MAX_RECONNECT_ATTEMPTS:
+            return
+        self._reconnect_attempts += 1
+        delay = self._RECONNECT_DELAY_SECS * min(self._reconnect_attempts, 3)
+        await asyncio.sleep(delay)
+        await self.connect()
+
+    def is_connected(self) -> bool:
+        return self._ws is not None
+
+    def send(self, message: Dict[str, Any]) -> bool:
+        """Send a JSON message. Queues it if the socket is still connecting.
+
+        Returns ``True`` if sent immediately, ``False`` if queued.
+        """
+        import asyncio
+
+        serialized = json.dumps(message)
+        if self.is_connected():
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._send_raw(serialized))
+            self._has_active_request = True
+            self._last_sent_message = serialized
+            return True
+
+        self._pending_messages.append(serialized)
+        if not self.is_connected():
+            loop = asyncio.get_event_loop()
+            loop.create_task(self.connect())
+        return False
+
+    async def _send_raw(self, serialized: str) -> None:
+        if self._ws is not None:
+            try:
+                await self._ws.send(serialized)
+            except Exception:
+                pass
+
+    def on_frame(self, handler: Callable[[Dict[str, Any]], None]) -> Callable[[], None]:
+        """Register a handler for all incoming frames.
+
+        Returns an unsubscribe callable.
+        """
+        self._frame_handlers.append(handler)
+
+        def unsubscribe() -> None:
+            try:
+                self._frame_handlers.remove(handler)
+            except ValueError:
+                pass
+
+        return unsubscribe
+
+    async def close(self) -> None:
+        """Close the connection and stop reconnection attempts."""
+        self._intentionally_closed = True
+        if self._receive_task is not None:
+            self._receive_task.cancel()
+            self._receive_task = None
+        if self._ws is not None:
+            try:
+                await self._ws.close()
+            except Exception:
+                pass
+            self._ws = None
+
+
 class InfinoSDK:
     def __init__(
         self,
@@ -156,10 +354,25 @@ class InfinoSDK:
     async def websocket_connect(
         self, path: str, headers: Optional[Dict[str, str]] = None
     ):
-        """Connect to WebSocket endpoint with SigV4 query parameter authentication"""
+        """Connect to WebSocket endpoint with SigV4 query parameter authentication.
+
+        Accepts paths with or without embedded query parameters, e.g.:
+            /fino/nl
+            /fino/nl?threadId=abc123&clientId=infino-sdk
+
+        Any query parameters already in the path (threadId, clientId, etc.) are
+        extracted and included in the SigV4 canonical request so they are signed.
+        """
         parsed = urlparse(self.endpoint)
         ws_proto = "wss" if parsed.scheme == "https" else "ws"
         host = parsed.netloc
+
+        # Split path from any embedded query parameters
+        canonical_uri = path
+        path_query_params: List[tuple] = []
+        if "?" in path:
+            canonical_uri, qs = path.split("?", 1)
+            path_query_params = urllib.parse.parse_qsl(qs, keep_blank_values=False)
 
         # Generate timestamp for signing
         timestamp = datetime.now(timezone.utc)
@@ -173,13 +386,13 @@ class InfinoSDK:
         )
         signed_headers = "host"
 
-        # Build query parameters (without signature yet)
-        query_params = [
+        # Build query parameters: SigV4 params + any path-embedded params (e.g. threadId, clientId)
+        query_params: List[tuple] = [
             ("X-Amz-Algorithm", algorithm),
             ("X-Amz-Credential", credential),
             ("X-Amz-Date", amz_date),
             ("X-Amz-SignedHeaders", signed_headers),
-        ]
+        ] + path_query_params
 
         # Sort query parameters for canonical request
         query_params.sort(key=lambda x: x[0])
@@ -193,11 +406,8 @@ class InfinoSDK:
         )
 
         # Create canonical request
-        canonical_uri = path
         canonical_headers = f"host:{host}\n"
-        payload_hash = hashlib.sha256(
-            b""
-        ).hexdigest()  # Empty string hash for WebSocket
+        payload_hash = hashlib.sha256(b"").hexdigest()
 
         canonical_request = f"GET\n{canonical_uri}\n{canonical_querystring}\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
 
@@ -210,10 +420,10 @@ class InfinoSDK:
         signing_key = self.derive_signing_key(date_stamp)
         signature = self.calculate_signature(signing_key, string_to_sign)
 
-        # Build final WebSocket URL with all query parameters including signature
+        # Build final WebSocket URL using the canonical path (not the original path+qs)
         ws_url = f"{ws_proto}://{host}{canonical_uri}?{canonical_querystring}&X-Amz-Signature={urllib.parse.quote(signature, safe='')}"
 
-        # Connect with optional additional headers (but auth is in query params)
+        # Connect with optional additional headers (auth is in query params)
         if headers:
             return await websockets.connect(ws_url, additional_headers=headers.items())
         return await websockets.connect(ws_url)
@@ -848,12 +1058,22 @@ class InfinoSDK:
 
     # Fino WebSocket Query Operations
     async def query_fino_nl(
-        self, query: str, timeout_ms: int = 180_000
+        self,
+        query: str,
+        timeout_ms: int = 180_000,
+        on_message: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> Dict[str, Any]:
         """Natural language query via WebSocket to /fino/nl.
 
         Creates a thread, connects to the WebSocket, sends the query in
         the search-handler message format, and waits for a result.
+
+        Args:
+            query: Natural language question.
+            timeout_ms: Timeout in milliseconds.
+            on_message: Optional callback invoked for every incoming frame,
+                        including intermediate update/partial frames. Mirrors
+                        the TypeScript SDK's ``FinoWsOptions.onMessage``.
         """
         now = datetime.now(timezone.utc).isoformat()
         message = {
@@ -872,15 +1092,28 @@ class InfinoSDK:
             "role": "user",
             "created_at": now,
         }
-        return await self._query_via_fino_ws("/fino/nl", message, timeout_ms)
+        return await self._query_via_fino_ws("/fino/nl", message, timeout_ms, on_message)
 
     async def query_fino_analyze(
-        self, query: str, timeout_ms: int = 180_000
+        self,
+        query: str,
+        timeout_ms: int = 180_000,
+        on_message: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> Dict[str, Any]:
         """Analytical query via WebSocket to /fino/analyze.
 
+        .. note::
+            **Beta — under active development.** The response format and
+            streaming frame types may change in future releases.
+
         Creates a thread, connects to the WebSocket, sends the query in
         the analyze-handler message format, and waits for results.
+
+        Args:
+            query: Analytical question or instruction.
+            timeout_ms: Timeout in milliseconds.
+            on_message: Optional callback invoked for every incoming frame,
+                        including intermediate analyze_action/partial frames.
         """
         message = {
             "type": "analyze",
@@ -893,7 +1126,7 @@ class InfinoSDK:
                 "attachments": [],
             },
         }
-        return await self._query_via_fino_ws("/fino/analyze", message, timeout_ms)
+        return await self._query_via_fino_ws("/fino/analyze", message, timeout_ms, on_message)
 
     async def generate_notebook_report(
         self,
@@ -903,6 +1136,10 @@ class InfinoSDK:
         timeout_ms: int = 120_000,
     ) -> str:
         """Generate a report from an existing notebook via WebSocket.
+
+        .. note::
+            **Beta — under active development.** This API may change in
+            future releases.
 
         Sends a generate_report message over /fino/ws and collects
         the report markdown from the partial summary response.
@@ -963,16 +1200,22 @@ class InfinoSDK:
         ws_path: str,
         message: Dict[str, Any],
         timeout_ms: int,
+        on_message: Optional[Callable[[Dict[str, Any]], None]] = None,
+        client_id: str = "infino-python-sdk",
     ) -> Dict[str, Any]:
         """Internal: connect to a Fino WebSocket, send a message, and collect the response."""
         import asyncio
 
         thread = self.create_thread({"name": "sdk-query"})
         thread_id = thread.get("id") or thread.get("thread_id") or thread.get("_id")
-        ws = await self.websocket_connect(
-            ws_path,
-            {"x-infino-ws-thread": str(thread_id), "x-infino-ws-client": "infino-sdk"},
+
+        # threadId and clientId as query params in the path, included in the SigV4 signature.
+        full_ws_path = (
+            f"{ws_path}"
+            f"?threadId={urllib.parse.quote(str(thread_id), safe='')}"
+            f"&clientId={urllib.parse.quote(client_id, safe='')}"
         )
+        ws = await self.websocket_connect(full_ws_path)
 
         await ws.send(json.dumps(message))
 
@@ -986,6 +1229,8 @@ class InfinoSDK:
                     continue
 
                 responses.append(msg)
+                if on_message is not None:
+                    on_message(msg)
                 top_type = msg.get("type", "")
 
                 if top_type == "error":
@@ -1018,6 +1263,7 @@ class InfinoSDK:
                             "followup_queries": content.get("followup_queries", []),
                             "sender_agent": content.get("sender_agent", ""),
                             "index_name": content.get("index_name"),
+                            "streaming_response": responses,
                         }
 
                     if msg_type == "error":
@@ -1416,37 +1662,6 @@ class InfinoSDK:
         response = self.request("GET", url)
         return response
 
-    # Role Mapping Operations
-    def create_role_mapping(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a role mapping in your account"""
-        url = f"{self.endpoint}/rolemapping/{name}"
-        response = self.request("PUT", url, body=json.dumps(config))
-        return response
-
-    def get_role_mapping(self, name: str) -> Dict[str, Any]:
-        """Get details for a role mapping"""
-        url = f"{self.endpoint}/rolemapping/{name}"
-        response = self.request("GET", url)
-        return response
-
-    def update_role_mapping(self, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Update a role mapping"""
-        url = f"{self.endpoint}/rolemapping/{name}"
-        response = self.request("PATCH", url, body=json.dumps(config))
-        return response
-
-    def delete_role_mapping(self, name: str) -> Dict[str, Any]:
-        """Delete a role mapping"""
-        url = f"{self.endpoint}/rolemapping/{name}"
-        response = self.request("DELETE", url)
-        return response
-
-    def list_role_mappings(self) -> Dict[str, Any]:
-        """List all role mappings in your account"""
-        url = f"{self.endpoint}/rolemappings"
-        response = self.request("GET", url)
-        return response
-
     # Account & Auth Operations
     def update_user_password(self, username: str, new_password: str) -> Dict[str, Any]:
         """Update a user's password"""
@@ -1494,6 +1709,183 @@ class InfinoSDK:
         url = f"{self.endpoint}/user/{username}/keys"
         response = self.request("PATCH", url)
         return response
+
+    # -------------------------------------------------------------------------
+    # Notification Channels
+    # -------------------------------------------------------------------------
+
+    def create_notification_channel(self, config: Any) -> Dict[str, Any]:
+        """Create a notification channel (email, slack, or webhook).
+
+        Args:
+            config: YAML string or dict with channel configuration
+
+        Returns:
+            Created channel document with channel_id
+        """
+        url = f"{self.endpoint}/alert"
+        body = config if isinstance(config, str) else json.dumps(config)
+        return self.request("POST", url, body=body)
+
+    def get_notification_channel(self, channel_id: str) -> Dict[str, Any]:
+        """Get a notification channel by ID."""
+        url = f"{self.endpoint}/alert/{channel_id}"
+        return self.request("GET", url)
+
+    def list_notification_channels(self) -> Dict[str, Any]:
+        """List all notification channels."""
+        url = f"{self.endpoint}/alerts"
+        return self.request("GET", url)
+
+    def update_notification_channel(self, channel_id: str, config: Any) -> Dict[str, Any]:
+        """Update an existing notification channel.
+
+        Args:
+            channel_id: ID of the channel to update
+            config: YAML string or dict with updated configuration
+        """
+        url = f"{self.endpoint}/alert/{channel_id}"
+        body = config if isinstance(config, str) else json.dumps(config)
+        return self.request("PATCH", url, body=body)
+
+    def delete_notification_channel(self, channel_id: str) -> Dict[str, Any]:
+        """Delete a notification channel by ID."""
+        url = f"{self.endpoint}/alert/{channel_id}"
+        return self.request("DELETE", url)
+
+    # Aliases used by existing integration tests
+    def create_alert(self, config: Any) -> Dict[str, Any]:
+        """Alias for create_notification_channel."""
+        return self.create_notification_channel(config)
+
+    def get_alert(self, channel_id: str) -> Dict[str, Any]:
+        """Alias for get_notification_channel."""
+        return self.get_notification_channel(channel_id)
+
+    def list_alerts(self) -> Dict[str, Any]:
+        """Alias for list_notification_channels."""
+        return self.list_notification_channels()
+
+    def update_alert(self, channel_id: str, config: Any) -> Dict[str, Any]:
+        """Alias for update_notification_channel."""
+        return self.update_notification_channel(channel_id, config)
+
+    def delete_alert(self, channel_id: str) -> Dict[str, Any]:
+        """Alias for delete_notification_channel."""
+        return self.delete_notification_channel(channel_id)
+
+    # -------------------------------------------------------------------------
+    # Monitors
+    # -------------------------------------------------------------------------
+
+    def create_monitor(self, config: Any) -> Dict[str, Any]:
+        """Create a monitor.
+
+        Args:
+            config: YAML string or dict with monitor configuration
+
+        Returns:
+            Created monitor document with _id
+        """
+        url = f"{self.endpoint}/monitor"
+        body = config if isinstance(config, str) else json.dumps(config)
+        return self.request("POST", url, body=body)
+
+    def get_monitor(self, monitor_id: str) -> Dict[str, Any]:
+        """Get a monitor by ID."""
+        url = f"{self.endpoint}/monitor/{monitor_id}"
+        return self.request("GET", url)
+
+    def list_monitors(self) -> Dict[str, Any]:
+        """List all monitors."""
+        url = f"{self.endpoint}/monitors"
+        return self.request("GET", url)
+
+    def update_monitor(self, monitor_id: str, config: Any) -> Dict[str, Any]:
+        """Update an existing monitor.
+
+        Args:
+            monitor_id: ID of the monitor to update
+            config: YAML string or dict with updated configuration
+        """
+        url = f"{self.endpoint}/monitor/{monitor_id}"
+        body = config if isinstance(config, str) else json.dumps(config)
+        return self.request("PATCH", url, body=body)
+
+    def delete_monitor(self, monitor_id: str) -> Dict[str, Any]:
+        """Delete a monitor by ID."""
+        url = f"{self.endpoint}/monitor/{monitor_id}"
+        return self.request("DELETE", url)
+
+    def execute_monitor(self, monitor_id: str, context: Any = None) -> Dict[str, Any]:
+        """Execute a monitor immediately.
+
+        Args:
+            monitor_id: ID of the monitor to execute
+            context: Optional JSON string or dict with trigger context
+
+        Returns:
+            Execution results including trigger outcomes and action statuses
+        """
+        url = f"{self.endpoint}/monitor/{monitor_id}/execute"
+        if context is None:
+            body = "{}"
+        elif isinstance(context, str):
+            body = context
+        else:
+            body = json.dumps(context)
+        return self.request("POST", url, body=body)
+
+    def list_alert_history(self) -> Dict[str, Any]:
+        """List alert execution history."""
+        url = f"{self.endpoint}/alert-history"
+        return self.request("GET", url)
+
+    def apply_notifications_config(self, yaml_config: str) -> Dict[str, Any]:
+        """Apply a YAML notifications configuration (channels + monitors in one call).
+
+        Args:
+            yaml_config: YAML string with Notifications block
+
+        Returns:
+            Applied configuration summary
+        """
+        url = f"{self.endpoint}/alerts/config"
+        return self.request("POST", url, body=yaml_config)
+
+    # -------------------------------------------------------------------------
+    # One-shot notify
+    # -------------------------------------------------------------------------
+
+    def notify(
+        self,
+        destination_id: str,
+        action: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Send a one-shot notification through an existing notification channel.
+
+        Args:
+            destination_id: ID of the notification channel to send through
+            action: Action config with optional subject_template and message_template
+            context: Template context variables (passed to Mustache templates)
+
+        Returns:
+            {"status": "sent"} on success
+
+        Example:
+            sdk.notify(
+                destination_id="my-email-channel",
+                action={
+                    "subject_template": {"source": "Welcome {{username}}"},
+                    "message_template": {"source": "Password: {{password}}"},
+                },
+                context={"username": "alice", "password": "s3cr3t"},
+            )
+        """
+        url = f"{self.endpoint}/alerts/notify"
+        payload = {"destination_id": destination_id, "action": action, "context": context}
+        return self.request("POST", url, body=json.dumps(payload))
 
 
 # Error conversion implementations
