@@ -1106,7 +1106,9 @@ class InfinoSDK:
 
         if not panels:
             return []
-        with ThreadPoolExecutor(max_workers=max(1, min(max_workers, len(panels)))) as ex:
+        with ThreadPoolExecutor(
+            max_workers=max(1, min(max_workers, len(panels)))
+        ) as ex:
             return list(ex.map(_resolve, panels))
 
     # Fino AI Thread Operations
@@ -1630,11 +1632,13 @@ def _sort_axis_values(values):
     """Sort axis-category values numerically when they all parse as numbers,
     otherwise lexicographically. Avoids ``"10" < "9"`` string-sort surprises
     on hour/day/numeric-as-string axes."""
+
     def _maybe_num(v):
         try:
             return float(v)
         except (TypeError, ValueError):
             return None
+
     try:
         nums = [(_maybe_num(v), v) for v in values]
         if all(n is not None for n, _ in nums):
@@ -1644,7 +1648,9 @@ def _sort_axis_values(values):
     return sorted(values)
 
 
-def _to_echarts_option_impl(viz: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
+def _to_echarts_option_impl(
+    viz: Dict[str, Any], data: Dict[str, Any]
+) -> Dict[str, Any]:
     """Implementation of `InfinoSDK.to_echarts_option`. See docstring there."""
     # Accept either the full envelope ({id, kind, attributes: {...}}) or the
     # attributes dict directly.
@@ -1653,7 +1659,7 @@ def _to_echarts_option_impl(viz: Dict[str, Any], data: Dict[str, Any]) -> Dict[s
     chart_type = (attrs.get("chart") or {}).get("type", "bar")
     mode = attrs.get("visualization_mode") or "chart"
     mapping = attrs.get("mapping") or {}
-    formatting = ((attrs.get("options") or {}).get("metric_formatting"))
+    formatting = (attrs.get("options") or {}).get("metric_formatting")
 
     columns = data.get("columns") or []
     rows = data.get("rows") or []

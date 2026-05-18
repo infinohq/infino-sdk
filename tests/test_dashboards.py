@@ -84,7 +84,10 @@ def test_create_dashboard_missing_title_returns_400(
 
     sdk.session.request.return_value = mock_response(
         400,
-        {"error": {"type": "ValidationError", "reason": "`title` is required"}, "status": 400},
+        {
+            "error": {"type": "ValidationError", "reason": "`title` is required"},
+            "status": 400,
+        },
     )
 
     with pytest.raises(InfinoError) as exc:
@@ -251,21 +254,43 @@ def test_execute_dashboard_fans_out_panels(sdk_with_mock_session, mock_response)
         "attributes": {
             "title": "Test",
             "panels": [
-                {"id": "p0", "kind": "visualization",
-                 "viz_id": "viz-a", "layout": {"x": 0, "y": 0, "w": 24, "h": 12},
-                 "title_override": None},
-                {"id": "p1", "kind": "visualization",
-                 "viz_id": "viz-b", "layout": {"x": 24, "y": 0, "w": 24, "h": 12},
-                 "title_override": None},
+                {
+                    "id": "p0",
+                    "kind": "visualization",
+                    "viz_id": "viz-a",
+                    "layout": {"x": 0, "y": 0, "w": 24, "h": 12},
+                    "title_override": None,
+                },
+                {
+                    "id": "p1",
+                    "kind": "visualization",
+                    "viz_id": "viz-b",
+                    "layout": {"x": 24, "y": 0, "w": 24, "h": 12},
+                    "title_override": None,
+                },
             ],
         },
     }
-    viz_a = {"id": "viz-a", "kind": "visualization", "attributes": {"title": "A", "chart": {"type": "bar"}}}
-    viz_b = {"id": "viz-b", "kind": "visualization", "attributes": {"title": "B", "chart": {"type": "pie"}}}
-    data_a = {"columns": [{"name": "x", "type": "string"}], "rows": [{"x": "alpha"}],
-              "metadata": {"row_count": 1}}
-    data_b = {"columns": [{"name": "y", "type": "number"}], "rows": [{"y": 42}],
-              "metadata": {"row_count": 1}}
+    viz_a = {
+        "id": "viz-a",
+        "kind": "visualization",
+        "attributes": {"title": "A", "chart": {"type": "bar"}},
+    }
+    viz_b = {
+        "id": "viz-b",
+        "kind": "visualization",
+        "attributes": {"title": "B", "chart": {"type": "pie"}},
+    }
+    data_a = {
+        "columns": [{"name": "x", "type": "string"}],
+        "rows": [{"x": "alpha"}],
+        "metadata": {"row_count": 1},
+    }
+    data_b = {
+        "columns": [{"name": "y", "type": "number"}],
+        "rows": [{"y": 42}],
+        "metadata": {"row_count": 1},
+    }
 
     # Route each mocked request based on URL so thread ordering doesn't matter.
     def fake_request(*args, **kwargs):
@@ -308,16 +333,33 @@ def test_execute_dashboard_isolates_per_panel_errors(
     sdk = sdk_with_mock_session
 
     dash_envelope = {
-        "id": "dash-x", "kind": "dashboard",
-        "attributes": {"title": "T", "panels": [
-            {"id": "p0", "kind": "visualization", "viz_id": "viz-ok",
-             "layout": {"x": 0, "y": 0, "w": 48, "h": 12}, "title_override": None},
-            {"id": "p1", "kind": "visualization", "viz_id": "viz-bad",
-             "layout": {"x": 0, "y": 12, "w": 48, "h": 12}, "title_override": None},
-        ]},
+        "id": "dash-x",
+        "kind": "dashboard",
+        "attributes": {
+            "title": "T",
+            "panels": [
+                {
+                    "id": "p0",
+                    "kind": "visualization",
+                    "viz_id": "viz-ok",
+                    "layout": {"x": 0, "y": 0, "w": 48, "h": 12},
+                    "title_override": None,
+                },
+                {
+                    "id": "p1",
+                    "kind": "visualization",
+                    "viz_id": "viz-bad",
+                    "layout": {"x": 0, "y": 12, "w": 48, "h": 12},
+                    "title_override": None,
+                },
+            ],
+        },
     }
-    good_viz = {"id": "viz-ok", "kind": "visualization",
-                "attributes": {"title": "OK", "chart": {"type": "bar"}}}
+    good_viz = {
+        "id": "viz-ok",
+        "kind": "visualization",
+        "attributes": {"title": "OK", "chart": {"type": "bar"}},
+    }
     good_data = {"columns": [], "rows": [], "metadata": {"row_count": 0}}
 
     def fake_request(*args, **kwargs):
@@ -331,7 +373,10 @@ def test_execute_dashboard_isolates_per_panel_errors(
         if "viz-bad" in url:
             return mock_response(
                 404,
-                {"error": {"type": "NotFound", "reason": "viz-bad not found"}, "status": 404},
+                {
+                    "error": {"type": "NotFound", "reason": "viz-bad not found"},
+                    "status": 404,
+                },
             )
         return mock_response(500, {"error": "unexpected"})
 
@@ -353,13 +398,27 @@ def test_execute_dashboard_handles_non_viz_panels(sdk_with_mock_session, mock_re
     sdk = sdk_with_mock_session
 
     dash = {
-        "id": "d", "kind": "dashboard",
-        "attributes": {"title": "T", "panels": [
-            {"id": "md0", "kind": "markdown", "content": "# Hello",
-             "layout": {"x": 0, "y": 0, "w": 48, "h": 4}, "title_override": None},
-            {"id": "dv0", "kind": "divider", "label": "Section",
-             "layout": {"x": 0, "y": 4, "w": 48, "h": 2}, "title_override": None},
-        ]},
+        "id": "d",
+        "kind": "dashboard",
+        "attributes": {
+            "title": "T",
+            "panels": [
+                {
+                    "id": "md0",
+                    "kind": "markdown",
+                    "content": "# Hello",
+                    "layout": {"x": 0, "y": 0, "w": 48, "h": 4},
+                    "title_override": None,
+                },
+                {
+                    "id": "dv0",
+                    "kind": "divider",
+                    "label": "Section",
+                    "layout": {"x": 0, "y": 4, "w": 48, "h": 2},
+                    "title_override": None,
+                },
+            ],
+        },
     }
     sdk.session.request.return_value = mock_response(200, dash)
 

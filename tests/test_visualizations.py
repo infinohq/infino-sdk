@@ -81,11 +81,16 @@ def test_create_visualization_missing_title_returns_400(
 
     sdk.session.request.return_value = mock_response(
         400,
-        {"error": {"type": "ValidationError", "reason": "`title` is required"}, "status": 400},
+        {
+            "error": {"type": "ValidationError", "reason": "`title` is required"},
+            "status": 400,
+        },
     )
 
     with pytest.raises(InfinoError) as exc:
-        sdk.create_visualization({"source": {"kind": "sql", "index": "x"}, "chart": {"type": "bar"}})
+        sdk.create_visualization(
+            {"source": {"kind": "sql", "index": "x"}, "chart": {"type": "bar"}}
+        )
     assert exc.value.status_code() == 400
 
 
@@ -116,7 +121,10 @@ def test_get_visualization_not_found(sdk_with_mock_session, mock_response):
 
     sdk.session.request.return_value = mock_response(
         404,
-        {"error": {"type": "NotFound", "reason": "visualization 'nope' not found"}, "status": 404},
+        {
+            "error": {"type": "NotFound", "reason": "visualization 'nope' not found"},
+            "status": 404,
+        },
     )
 
     with pytest.raises(InfinoError) as exc:
