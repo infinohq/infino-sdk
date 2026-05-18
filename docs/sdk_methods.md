@@ -974,3 +974,316 @@ true
   "secret_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 }
 ```
+
+---
+
+## Visualization Functions
+
+A **visualization** is a saved chart definition: where to get the data (a SQL query) and how to render it (chart type, mapping, formatting). Each visualization is identified by an id you can fetch, update, or execute on demand.
+
+See [dashboards.md](./dashboards.md) for the full feature guide — quickstart, layout sizing, troubleshooting, and an end-to-end runnable example. The reference below documents the input parameters and response shape of each SDK method.
+
+The API wraps each saved object in a small response shape: `id`, `created_at`, `updated_at`, and `kind` sit alongside the saved object, which lives in `attributes`. The same shape is returned by `create_*`, `get_*`, and `update_*` (shown in full under [create_visualization](#create_visualization)).
+
+### create_visualization
+**Description:** Create a SQL-backed visualization. The server fills mapping / options / tags / limit / etc. — minimum body is `title`, `source` (with `kind`, `index`, and `sql.raw_query`), and `chart.type`.
+
+**Input Parameters:**
+- `spec` (dict, required): Visualization specification. Minimum:
+  - `title` (str): Display title
+  - `source.kind` (str): Currently only `"sql"`
+  - `source.index` (str): Dataset name (e.g. `"license_events"`)
+  - `source.sql.raw_query` (str): Non-empty SQL string
+  - `chart.type` (str): One of `bar`, `horizontalBar`, `line`, `area`, `pie`, `heatmap`, `scatter`, `metric`, `gauge`
+
+**Sample Input:**
+```json
+{
+  "title": "Top denied features",
+  "source": {
+    "kind": "sql",
+    "index": "license_events",
+    "sql": {
+      "raw_query": "SELECT feature, COUNT(*) AS denials FROM license_events WHERE event_type = 'DENIED' GROUP BY feature ORDER BY denials DESC LIMIT 10"
+    }
+  },
+  "chart": {"type": "bar"}
+}
+```
+
+**Output:**
+```json
+{
+  "id": "0a9c8f...",
+  "kind": "visualization",
+  "created_at": "2026-05-15T10:30:00Z",
+  "updated_at": "2026-05-15T10:30:00Z",
+  "attributes": {
+    "id": "0a9c8f...",
+    "schema_version": "v1",
+    "title": "Top denied features",
+    "source": {"kind": "sql", "index": "license_events", "sql": {"raw_query": "..."}},
+    "chart": {"type": "bar"},
+    "mapping": {"x": null, "y": [], "series_split_by": null},
+    "options": {"metric_formatting": null},
+    "visualization_mode": "chart",
+    "tags": [],
+    "created_at": "2026-05-15T10:30:00Z",
+    "updated_at": "2026-05-15T10:30:00Z",
+    "created_by": "alice"
+  }
+}
+```
+
+---
+
+### get_visualization
+**Description:** Fetch a saved visualization by id.
+
+**Input Parameters:**
+- `viz_id` (str, required): The visualization id
+
+**Output:** Same response shape as `create_visualization`.
+
+---
+
+### list_visualizations
+**Description:** List visualizations the caller can see, with pagination.
+
+**Input Parameters:**
+- `limit` (int, optional): Page size (server default 500, max 1000)
+- `offset` (int, optional): Page offset (default 0)
+
+**Output:**
+```json
+{
+  "items": [
+    {"id": "0a9c8f...", "kind": "visualization", "attributes": {"...": "..."}},
+    {"id": "1b8d7e...", "kind": "visualization", "attributes": {"...": "..."}}
+  ]
+}
+```
+
+---
+
+### update_visualization
+**Description:** Patch a visualization with a partial spec. Send only the fields you want to change — anything you don't send is preserved. Send a field as `null` to unset it. Lists are replaced wholesale, not merged element-wise (to add to a list, resend the full updated list). `id`, `schema_version`, `created_at`, and `created_by` are immutable; the server ignores attempts to overwrite them. *(Wire format: RFC 7396 JSON Merge Patch.)*
+
+**Input Parameters:**
+- `viz_id` (str, required): The visualization id
+- `partial` (dict, required): Subset of the visualization spec to merge in
+
+**Sample Input:**
+```json
+{
+  "title": "Top denied features (Q3)",
+  "source": {"sql": {"limit": 200}}
+}
+```
+
+**Output:** The updated visualization (same response shape as `create_visualization`).
+
+---
+
+### delete_visualization
+**Description:** Delete a visualization by id.
+
+**Input Parameters:**
+- `viz_id` (str, required): The visualization id
+
+**Output:**
+```json
+{"acknowledged": true}
+```
+
+---
+
+### execute_visualization
+**Description:** Run the saved SQL and return plot-ready rows. Currently supports SQL visualizations (`source.kind == "sql"`) with `source.sql.raw_query`. Runtime filter / time-range overrides are not yet wired through — bake them into the SQL string for now.
+
+**Input Parameters:**
+- `viz_id` (str, required): The visualization id
+
+**Output:**
+```json
+{
+  "columns": [
+    {"name": "Feature", "type": "string"},
+    {"name": "Denials", "type": "number"}
+  ],
+  "rows": [
+    {"Feature": "synopsys_vcs", "Denials": 1284},
+    {"Feature": "cadence_innovus", "Denials": 902}
+  ],
+  "metadata": {
+    "source_kind": "sql",
+    "row_count": 2,
+    "truncated": false,
+    "took_ms": 47,
+    "executed_query": "SELECT `feature_name` AS `Feature`, ..."
+  }
+}
+```
+
+Column `type` is normalised to `string` / `number` / `boolean` / `date` / `null`.
+
+---
+
+### to_echarts_option
+**Description:** Pure function (no network call) that turns a saved visualization plus its executed rows into a render-ready shape. Pass in the result of `get_visualization(viz_id)` (or just its `attributes`) and the result of `execute_visualization(viz_id)`.
+
+**Input Parameters:**
+- `viz` (dict, required): The visualization response or its `attributes` block
+- `data` (dict, required): The output of `execute_visualization(viz_id)`
+
+**Output:** A dict whose `kind` tells you which branch to render:
+
+- `"echarts"` — `result["option"]` is plain ECharts JSON you can pass straight to `echarts.setOption(...)` in the browser, or to pyecharts in Python. Covers `bar`, `horizontalBar`, `line`, `area`, `pie`, `heatmap`, `scatter`.
+- `"table"` — `result["columns"]` and `result["rows"]` for inline HTML / pandas rendering. Returned when `visualization_mode == "table"` or when the data doesn't fit the declared chart type.
+- `"metric"` — `result["value"]` is the single aggregated number with optional `result["formatting"]` (`prefix`, `suffix`, `decimals`, `abbreviate`, `thousands_separator`). Returned when `visualization_mode == "metric"` or `chart.type == "metric" | "gauge"`.
+
+---
+
+## Dashboard Functions
+
+A **dashboard** is an ordered list of panels. Each panel either references a saved visualization (`viz_id`) or carries inline content (markdown / divider). Layout is a 48-column CSS grid with per-panel `{x, y, w, h}` placement — see [dashboards.md](./dashboards.md#layout) for sizing.
+
+The same response shape (`id`, `created_at`, `updated_at`, `kind`, plus the dashboard itself in `attributes`) is used by all dashboard endpoints.
+
+### create_dashboard
+**Description:** Create a dashboard. Minimum body is `{"title"}`. `panels` defaults to `[]`. Each panel needs `viz_id` for visualization panels, `content` for markdown panels, or nothing for dividers; `kind` defaults to `"visualization"`. Omit `layout` on every panel and the server auto-flows them into a 2-column grid.
+
+**Input Parameters:**
+- `spec` (dict, required):
+  - `title` (str, required): Display title
+  - `panels` (list, optional): Ordered panel list
+
+**Sample Input:**
+```json
+{
+  "title": "FlexLM License Overview",
+  "panels": [
+    {"viz_id": "0a9c8f...", "layout": {"x": 0,  "y": 0,  "w": 12, "h": 8}},
+    {"viz_id": "1b8d7e...", "layout": {"x": 12, "y": 0,  "w": 18, "h": 16}}
+  ]
+}
+```
+
+**Panel fields:**
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `kind` | `"visualization"` \| `"markdown"` \| `"divider"` | Defaults to `"visualization"` |
+| `viz_id` | string | Required for visualization panels |
+| `content` | string | Required for markdown panels |
+| `layout` | `{x, y, w, h}` | 48-column grid; 1 row unit ≈ 22px in the reference renderer |
+| `title_override` | string \| null | Display title; falls back to the visualization's own title |
+
+**Output:**
+```json
+{
+  "id": "d12abc...",
+  "kind": "dashboard",
+  "created_at": "2026-05-15T10:30:00Z",
+  "updated_at": "2026-05-15T10:30:00Z",
+  "attributes": {
+    "id": "d12abc...",
+    "schema_version": "v1",
+    "title": "FlexLM License Overview",
+    "panels": [
+      {"id": "panel_0", "kind": "visualization", "viz_id": "0a9c8f...",
+       "layout": {"x": 0, "y": 0, "w": 12, "h": 8}, "title_override": null}
+    ],
+    "tags": [],
+    "created_at": "2026-05-15T10:30:00Z",
+    "updated_at": "2026-05-15T10:30:00Z",
+    "created_by": "alice"
+  }
+}
+```
+
+---
+
+### get_dashboard
+**Description:** Fetch a saved dashboard by id.
+
+**Input Parameters:**
+- `dashboard_id` (str, required): The dashboard id
+
+**Output:** Same response shape as `create_dashboard`.
+
+---
+
+### list_dashboards
+**Description:** List dashboards the caller can see, with pagination.
+
+**Input Parameters:**
+- `limit` (int, optional): Page size (server default 500, max 1000)
+- `offset` (int, optional): Page offset (default 0)
+
+**Output:**
+```json
+{"items": [{"id": "d12abc...", "kind": "dashboard", "attributes": {"...": "..."}}]}
+```
+
+---
+
+### update_dashboard
+**Description:** Patch a dashboard with a partial spec — same semantics as [`update_visualization`](#update_visualization). Send only the fields you want to change; anything you don't send is preserved. Note that lists (notably `panels`) are replaced wholesale by the patch, not merged element-wise — to add a single panel, resend the full updated `panels` list including the new entry.
+
+**Input Parameters:**
+- `dashboard_id` (str, required): The dashboard id
+- `partial` (dict, required): Subset of the dashboard spec to merge in
+
+**Sample Input:**
+```json
+{"title": "FlexLM Overview (Q3)"}
+```
+
+**Output:** The updated dashboard (same response shape as `create_dashboard`).
+
+---
+
+### delete_dashboard
+**Description:** Delete a dashboard by id.
+
+**Input Parameters:**
+- `dashboard_id` (str, required): The dashboard id
+
+**Output:**
+```json
+{"acknowledged": true}
+```
+
+---
+
+### execute_dashboard
+**Description:** Execute every panel in a dashboard in parallel via `ThreadPoolExecutor` and return per-panel layout + viz config + plot-ready rows in one call. Per-panel errors are isolated — one bad panel surfaces under that panel's `error` field; the rest still return.
+
+**Input Parameters:**
+- `dashboard_id` (str, required): The dashboard id
+- `max_workers` (int, optional): Thread-pool size for the fan-out (default 16)
+
+**Output:**
+```json
+[
+  {
+    "id": "panel_0",
+    "kind": "visualization",
+    "layout": {"x": 0, "y": 0, "w": 12, "h": 8},
+    "title_override": null,
+    "viz":  { "<full Visualization attributes>": "..." },
+    "data": { "columns": [], "rows": [], "metadata": {} },
+    "error": null
+  },
+  {
+    "id": "panel_1",
+    "kind": "visualization",
+    "layout": {"x": 12, "y": 0, "w": 18, "h": 16},
+    "title_override": null,
+    "viz":  null,
+    "data": null,
+    "error": {"status": 500, "message": "SQL parse error: ..."}
+  }
+]
+```

@@ -21,6 +21,7 @@ import logging
 import os
 import time
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -824,6 +825,290 @@ class InfinoSDK:
             return response
         raise InfinoError(InfinoError.Type.INVALID_REQUEST, "Expected list of datasets")
 
+    # Visualization Operations
+    def create_visualization(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a visualization. The server fills defaults for any field not
+        supplied — minimally, ``title``, ``source`` (with ``kind`` and ``index``),
+        and ``chart.type`` are enough.
+
+        For SQL visualizations supply ``source.sql.raw_query``:
+
+            >>> client.create_visualization({
+            ...     "title": "Orders by currency",
+            ...     "source": {
+            ...         "kind": "sql",
+            ...         "index": "sample-ecommerce-data.rel",
+            ...         "sql": {"raw_query": "SELECT currency, COUNT(*) AS count "
+            ...                              "FROM \\"sample-ecommerce-data.rel\\" "
+            ...                              "GROUP BY currency"},
+            ...     },
+            ...     "chart": {"type": "bar"},
+            ... })
+
+        Returns an envelope ``{"id", "kind", "created_at", "updated_at",
+        "attributes": {<full Visualization>}}``.
+        """
+        url = f"{self.endpoint}/visualizations"
+        return self.request("POST", url, None, json.dumps(spec))
+
+    def get_visualization(self, viz_id: str) -> Dict[str, Any]:
+        """Fetch a saved visualization by id. Returns the envelope shape."""
+        url = f"{self.endpoint}/visualizations/{viz_id}"
+        return self.request("GET", url)
+
+    def update_visualization(
+        self, viz_id: str, partial: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Patch a visualization with a partial spec (RFC 7396 JSON Merge Patch).
+
+        Only the fields you supply are touched; the rest are preserved. A
+        ``null`` value removes the key. The server protects ``id``,
+        ``schema_version``, ``created_at``, and ``created_by`` from mutation.
+
+            >>> # Rename and bump the SQL row limit
+            >>> client.update_visualization(viz_id, {
+            ...     "title": "Orders by currency (updated)",
+            ...     "source": {"sql": {"limit": 200}},
+            ... })
+
+        Returns the updated envelope.
+        """
+        url = f"{self.endpoint}/visualizations/{viz_id}"
+        return self.request("PATCH", url, None, json.dumps(partial))
+
+    def list_visualizations(
+        self, limit: Optional[int] = None, offset: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """List visualizations the caller can see.
+
+        Returns ``{"items": [envelope, envelope, ...]}``. Supports pagination
+        via ``limit`` (server default 500, max 1000) and ``offset`` (default 0).
+        """
+        url = f"{self.endpoint}/visualizations"
+        params: Optional[Dict[str, str]] = None
+        if limit is not None or offset is not None:
+            params = {}
+            if limit is not None:
+                params["limit"] = str(limit)
+            if offset is not None:
+                params["offset"] = str(offset)
+        return self.request("GET", url, params=params)
+
+    def delete_visualization(self, viz_id: str) -> Dict[str, Any]:
+        """Delete a visualization by id."""
+        url = f"{self.endpoint}/visualizations/{viz_id}"
+        return self.request("DELETE", url)
+
+    def execute_visualization(self, viz_id: str) -> Dict[str, Any]:
+        """Execute a saved visualization and return plot-ready rows.
+
+        Returns ``{"columns": [{"name", "type"}, ...],
+                   "rows": [{col: val, ...}, ...],
+                   "metadata": {"source_kind", "row_count", "truncated",
+                                "took_ms", "executed_query"}}``.
+
+        Phase 1 supports SQL visualizations with ``source.sql.raw_query``.
+        Filter / time-range overrides will be added in a follow-up; bake them
+        into the SQL query string until then.
+        """
+        url = f"{self.endpoint}/visualizations/{viz_id}/data"
+        return self.request("POST", url, None, json.dumps({}))
+
+    def to_echarts_option(
+        self,
+        viz: Dict[str, Any],
+        data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Map a stored visualization + its executed rows into a renderable spec.
+
+        Pure function — no network call. Pass in the result of
+        ``get_visualization(viz_id)`` (or just its ``attributes``) and the
+        result of ``execute_visualization(viz_id)``. Returns a dispatch dict:
+
+            { "kind": "echarts" | "table" | "metric", ... }
+
+        - ``kind == "echarts"``: ``result["option"]`` is plain ECharts JSON
+          you can pass directly to ``echarts.setOption(...)`` in the browser,
+          or to ``pyecharts.options.InitOpts`` / ``chart.set_option()`` in
+          Python notebooks. Covers ``bar``, ``horizontalBar``, ``line``,
+          ``area``, ``pie``, ``heatmap``, ``scatter``.
+        - ``kind == "table"``: ``result["columns"]`` and ``result["rows"]``
+          for inline HTML/pandas rendering. Returned when
+          ``visualization_mode == "table"`` or when the data doesn't fit the
+          declared chart type.
+        - ``kind == "metric"``: ``result["value"]`` is the single
+          aggregated value, with optional ``result["formatting"]`` (prefix,
+          suffix, decimals, abbreviate, thousands_separator). Returned when
+          ``visualization_mode == "metric"`` or
+          ``chart.type == "metric" | "gauge"``.
+
+        The opinionated mapping uses ``viz.mapping.x``, ``viz.mapping.y``,
+        and ``viz.mapping.series_split_by`` to pick columns; if mapping is
+        empty it falls back to "first column = X, second = Y" semantics.
+        Styling (colors, fonts, tooltip formatters) is intentionally
+        minimal — deep-merge your theme on top in your renderer.
+
+        Out of scope: data subsampling (use ``LIMIT`` in your SQL),
+        cross-filtering, drill-down. These are renderer-level concerns.
+        """
+        return _to_echarts_option_impl(viz, data)
+
+    # Dashboard Operations
+    def create_dashboard(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a dashboard. The server fills defaults for any field not
+        supplied — minimally, ``title`` is enough (with ``panels`` defaulting
+        to an empty list). Each panel needs ``viz_id`` for visualization
+        panels, ``content`` for markdown panels, or nothing for dividers;
+        ``kind`` defaults to ``"visualization"`` and ``layout`` auto-flows
+        into a 2-column grid:
+
+            >>> dash = client.create_dashboard({
+            ...     "title": "Revenue overview",
+            ...     "panels": [
+            ...         {"viz_id": "viz-orders-by-currency"},
+            ...         {"viz_id": "viz-orders-by-day"},
+            ...     ],
+            ... })
+
+        Returns an envelope ``{"id", "kind", "created_at", "updated_at",
+        "attributes": {<full Dashboard>}}``.
+        """
+        url = f"{self.endpoint}/dashboards"
+        return self.request("POST", url, None, json.dumps(spec))
+
+    def get_dashboard(self, dashboard_id: str) -> Dict[str, Any]:
+        """Fetch a saved dashboard by id. Returns the envelope shape."""
+        url = f"{self.endpoint}/dashboards/{dashboard_id}"
+        return self.request("GET", url)
+
+    def update_dashboard(
+        self, dashboard_id: str, partial: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Patch a dashboard with a partial spec (RFC 7396 JSON Merge Patch).
+
+        Only the fields you supply are touched; the rest are preserved. A
+        ``null`` value removes the key. The server protects ``id``,
+        ``schema_version``, ``created_at``, and ``created_by`` from mutation.
+
+            >>> # Rename a dashboard without touching panels or options
+            >>> client.update_dashboard(dash_id, {"title": "Revenue (Q3)"})
+
+        Note that JSON Merge Patch's array semantics replace the array
+        entirely — to add a single panel, send the full panel list including
+        the new entry, not just the addition.
+
+        Returns the updated envelope.
+        """
+        url = f"{self.endpoint}/dashboards/{dashboard_id}"
+        return self.request("PATCH", url, None, json.dumps(partial))
+
+    def list_dashboards(
+        self, limit: Optional[int] = None, offset: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """List dashboards the caller can see.
+
+        Returns ``{"items": [envelope, envelope, ...]}``. Supports pagination
+        via ``limit`` (server default 500, max 1000) and ``offset`` (default 0).
+        """
+        url = f"{self.endpoint}/dashboards"
+        params: Optional[Dict[str, str]] = None
+        if limit is not None or offset is not None:
+            params = {}
+            if limit is not None:
+                params["limit"] = str(limit)
+            if offset is not None:
+                params["offset"] = str(offset)
+        return self.request("GET", url, params=params)
+
+    def delete_dashboard(self, dashboard_id: str) -> Dict[str, Any]:
+        """Delete a dashboard by id."""
+        url = f"{self.endpoint}/dashboards/{dashboard_id}"
+        return self.request("DELETE", url)
+
+    def execute_dashboard(
+        self,
+        dashboard_id: str,
+        max_workers: int = 16,
+    ) -> List[Dict[str, Any]]:
+        """Execute every panel in a dashboard in parallel and return per-panel
+        layout + viz config + plot-ready rows.
+
+        For a 16-panel dashboard this replaces the customer's naive
+        ``for panel in panels: get_visualization + execute_visualization``
+        loop (33 sequential HTTP calls, ~1.5s wall time) with a single SDK
+        call that fans out under the hood (~100ms wall time, slowest panel
+        dominates).
+
+        Returns a list of panel dicts in their dashboard order::
+
+            [
+              {
+                "id": "panel_0",
+                "kind": "visualization",
+                "layout": {"x": 0, "y": 0, "w": 48, "h": 18},
+                "title_override": None,
+                "viz": {<full Visualization attributes>},   # None on error
+                "data": {"columns": [...], "rows": [...],
+                         "metadata": {...}},                  # None on error
+                "error": None,                                # {status, message} on failure
+              },
+              ...
+            ]
+
+        - Visualization-kind panels populate ``viz`` and ``data``. Per-panel
+          errors are captured in ``error`` (the whole call doesn't fail).
+        - Markdown panels get ``content``; divider panels get ``label``.
+        - Combine with :meth:`to_echarts_option` for the chart spec::
+
+              for p in sdk.execute_dashboard(dash_id):
+                  if p["kind"] != "visualization" or p["error"]:
+                      continue
+                  spec = sdk.to_echarts_option(p["viz"], p["data"])
+                  render_at(p["layout"], spec)
+
+        ``max_workers`` caps the parallelism. The default (16) is enough for
+        typical dashboards; tune higher only if you're rendering 50+ panels
+        and the gateway can absorb the concurrency.
+        """
+        dash = self.get_dashboard(dashboard_id)
+        panels = dash.get("attributes", {}).get("panels", []) or []
+
+        def _resolve(panel: Dict[str, Any]) -> Dict[str, Any]:
+            out: Dict[str, Any] = {
+                "id": panel.get("id"),
+                "kind": panel.get("kind"),
+                "layout": panel.get("layout"),
+                "title_override": panel.get("title_override"),
+                "viz": None,
+                "data": None,
+                "error": None,
+            }
+            if panel.get("kind") == "visualization":
+                viz_id = panel.get("viz_id")
+                if not viz_id:
+                    out["error"] = {"status": 400, "message": "panel missing viz_id"}
+                    return out
+                try:
+                    viz_envelope = self.get_visualization(viz_id)
+                    data = self.execute_visualization(viz_id)
+                    out["viz"] = viz_envelope.get("attributes", viz_envelope)
+                    out["data"] = data
+                except InfinoError as e:
+                    out["error"] = {
+                        "status": e.status_code(),
+                        "message": str(e),
+                    }
+            elif panel.get("kind") == "markdown":
+                out["content"] = panel.get("content")
+            elif panel.get("kind") == "divider":
+                out["label"] = panel.get("label")
+            return out
+
+        if not panels:
+            return []
+        with ThreadPoolExecutor(max_workers=max(1, min(max_workers, len(panels)))) as ex:
+            return list(ex.map(_resolve, panels))
+
     # Fino AI Thread Operations
     def list_threads(self) -> List[Dict[str, Any]]:
         """List all Fino conversation threads"""
@@ -1332,6 +1617,240 @@ class InfinoSDK:
         url = f"{self.endpoint}/user/{username}/keys"
         response = self.request("PATCH", url)
         return response
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ECharts option builder — pure function used by `InfinoSDK.to_echarts_option`.
+# Plain dict output (no pyecharts dependency); the spec is directly consumable
+# by `echarts.setOption(...)` in any language / web stack.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _sort_axis_values(values):
+    """Sort axis-category values numerically when they all parse as numbers,
+    otherwise lexicographically. Avoids ``"10" < "9"`` string-sort surprises
+    on hour/day/numeric-as-string axes."""
+    def _maybe_num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    try:
+        nums = [(_maybe_num(v), v) for v in values]
+        if all(n is not None for n, _ in nums):
+            return [orig for _, orig in sorted(nums, key=lambda t: t[0])]
+    except Exception:
+        pass
+    return sorted(values)
+
+
+def _to_echarts_option_impl(viz: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
+    """Implementation of `InfinoSDK.to_echarts_option`. See docstring there."""
+    # Accept either the full envelope ({id, kind, attributes: {...}}) or the
+    # attributes dict directly.
+    attrs = viz.get("attributes", viz) if isinstance(viz, dict) else {}
+    title = attrs.get("title") or ""
+    chart_type = (attrs.get("chart") or {}).get("type", "bar")
+    mode = attrs.get("visualization_mode") or "chart"
+    mapping = attrs.get("mapping") or {}
+    formatting = ((attrs.get("options") or {}).get("metric_formatting"))
+
+    columns = data.get("columns") or []
+    rows = data.get("rows") or []
+    col_names = [c["name"] for c in columns]
+
+    # --- visualization_mode = "table" → return table shape ----------------
+    if mode == "table":
+        return {"kind": "table", "columns": columns, "rows": rows, "title": title}
+
+    # --- visualization_mode = "metric" OR chart.type ∈ {metric, gauge} -----
+    if mode == "metric" or chart_type in ("metric", "gauge"):
+        # Pick first numeric column from first row as the value.
+        value = None
+        label = title
+        if rows and col_names:
+            value = rows[0].get(col_names[0])
+        return {
+            "kind": "metric",
+            "title": title,
+            "label": label,
+            "value": value,
+            "formatting": formatting,
+        }
+
+    # --- otherwise build a chart option for the declared chart_type --------
+    # When `mapping` is not populated by the viz, fall back to a type-aware
+    # heuristic: X = first non-numeric column (typically a dimension), Y =
+    # first numeric column (typically the metric). This avoids picking the
+    # wrong Y when a query has the shape (dimension, dimension, metric) —
+    # positional `cols[1]` would grab a string column. Customers can override
+    # by setting `mapping.x` / `mapping.y` explicitly on the viz.
+    types_by_name = {c["name"]: c.get("type") for c in columns}
+    non_numeric = [n for n in col_names if types_by_name.get(n) != "number"]
+    numeric = [n for n in col_names if types_by_name.get(n) == "number"]
+
+    x_col = mapping.get("x")
+    if not x_col:
+        x_col = non_numeric[0] if non_numeric else (col_names[0] if col_names else None)
+
+    y_cols = mapping.get("y") or []
+    if not y_cols:
+        candidate_y = [n for n in numeric if n != x_col]
+        if candidate_y:
+            y_cols = [candidate_y[0]]
+        elif len(col_names) > 1:
+            y_cols = [col_names[1]]
+    series_split = mapping.get("series_split_by")
+
+    if not rows or not col_names:
+        # Empty → return an empty-shaped table so the consumer still has
+        # something to render with a clear "no data" affordance.
+        return {"kind": "table", "columns": columns, "rows": [], "title": title}
+
+    option: Dict[str, Any]
+    if chart_type == "pie":
+        if not (x_col and y_cols):
+            return {"kind": "table", "columns": columns, "rows": rows, "title": title}
+        option = {
+            "title": {"text": title},
+            "tooltip": {"trigger": "item"},
+            "legend": {"orient": "horizontal", "bottom": 0},
+            "series": [
+                {
+                    "name": y_cols[0],
+                    "type": "pie",
+                    "radius": ["40%", "70%"],
+                    "data": [
+                        {"name": str(r[x_col]), "value": r[y_cols[0]] or 0}
+                        for r in rows
+                    ],
+                }
+            ],
+        }
+    elif chart_type == "heatmap":
+        if not (x_col and y_cols and series_split):
+            return {"kind": "table", "columns": columns, "rows": rows, "title": title}
+        # Numeric-aware sort so hour-of-day / day-of-month axes are in correct
+        # numeric order rather than lexicographic ("10" < "9").
+        xs = _sort_axis_values({str(r[x_col]) for r in rows})
+        ys = _sort_axis_values({str(r[series_split]) for r in rows})
+        xi = {v: i for i, v in enumerate(xs)}
+        yi = {v: i for i, v in enumerate(ys)}
+        heat = [
+            [xi[str(r[x_col])], yi[str(r[series_split])], r[y_cols[0]] or 0]
+            for r in rows
+        ]
+        vmax = max((p[2] for p in heat), default=1) or 1
+        option = {
+            "title": {"text": title},
+            "tooltip": {"position": "top"},
+            "xAxis": {"type": "category", "data": xs, "splitArea": {"show": True}},
+            "yAxis": {"type": "category", "data": ys, "splitArea": {"show": True}},
+            "visualMap": {
+                "min": 0,
+                "max": vmax,
+                "calculable": True,
+                "orient": "horizontal",
+                "left": "center",
+                "bottom": 0,
+            },
+            "series": [
+                {
+                    "name": y_cols[0],
+                    "type": "heatmap",
+                    "data": heat,
+                    "label": {"show": True, "fontSize": 10},
+                    "emphasis": {
+                        "itemStyle": {
+                            "shadowBlur": 10,
+                            "shadowColor": "rgba(0, 0, 0, 0.5)",
+                        }
+                    },
+                }
+            ],
+        }
+    elif chart_type == "scatter":
+        if not (x_col and y_cols):
+            return {"kind": "table", "columns": columns, "rows": rows, "title": title}
+        option = {
+            "title": {"text": title},
+            "tooltip": {"trigger": "item"},
+            "xAxis": {"type": "value", "name": x_col},
+            "yAxis": {"type": "value", "name": y_cols[0]},
+            "series": [
+                {
+                    "name": y_cols[0],
+                    "type": "scatter",
+                    "data": [[r.get(x_col), r.get(y_cols[0])] for r in rows],
+                }
+            ],
+        }
+    else:
+        # bar / horizontalBar / line / area — all axis charts with optional
+        # series split. Use line type for line/area (with areaStyle for area).
+        is_horizontal = chart_type == "horizontalBar"
+        is_line_like = chart_type in ("line", "area")
+        is_area = chart_type == "area"
+        series_type = "line" if is_line_like else "bar"
+
+        # Horizontal bars get inline value labels at the right end of each bar
+        # (pyecharts does this by default; we replicate so the look matches).
+        bar_label = {"show": True, "position": "right"} if is_horizontal else None
+
+        if series_split and y_cols:
+            # Pivot rows into one series per series_split_by value.
+            x_vals = []
+            series_buckets: Dict[str, Dict[str, Any]] = {}
+            for r in rows:
+                xv = str(r.get(x_col))
+                if xv not in x_vals:
+                    x_vals.append(xv)
+                sv = str(r.get(series_split))
+                series_buckets.setdefault(sv, {})[xv] = r.get(y_cols[0])
+            series = []
+            for sv, bucket in series_buckets.items():
+                s = {
+                    "name": sv,
+                    "type": series_type,
+                    "data": [bucket.get(xv) for xv in x_vals],
+                }
+                if is_area:
+                    s["areaStyle"] = {}
+                if bar_label:
+                    s["label"] = bar_label
+                series.append(s)
+        else:
+            x_vals = [str(r.get(x_col)) for r in rows]
+            series = []
+            for y in y_cols:
+                s = {
+                    "name": y,
+                    "type": series_type,
+                    "data": [r.get(y) for r in rows],
+                }
+                if is_area:
+                    s["areaStyle"] = {}
+                if bar_label:
+                    s["label"] = bar_label
+                series.append(s)
+
+        x_axis = {"type": "category", "data": x_vals, "name": x_col}
+        y_axis = {"type": "value"}
+        option = {
+            "title": {"text": title, "left": "center"},
+            "tooltip": {"trigger": "axis"},
+            "legend": {"top": 28} if len(series) > 1 else {"show": False},
+            "grid": {"left": "3%", "right": "8%", "bottom": "8%", "containLabel": True},
+            "xAxis": y_axis if is_horizontal else x_axis,
+            "yAxis": x_axis if is_horizontal else y_axis,
+            "series": series,
+        }
+
+    # Centre titles on every option type so panels render with consistent header
+    # alignment when laid out in a CSS grid.
+    if isinstance(option.get("title"), dict):
+        option["title"].setdefault("left", "center")
+    return {"kind": "echarts", "title": title, "option": option}
 
 
 # Error conversion implementations

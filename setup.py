@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="infino-sdk",
-    version="0.3.0",
+    version="0.5.0",
     description="Python SDK for Infino API",
     author="Infino AI, Inc.",
     author_email="support@infino.ai",
