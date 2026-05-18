@@ -104,6 +104,49 @@ Learn how to:
 python examples/sql_analytics.py
 ```
 
+### Dashboards ([examples/dashboards/](dashboards/))
+**Visualizations, dashboards, and consumer-side ECharts rendering**
+
+The `dashboards/` folder is a small package: shared utilities (credentials, logging, HTML render) live in `dashboards/common/`, and each top-level script is an end-to-end flow that imports from it. The example SQL targets a license-management dataset (`flexlm_cdslmd.rel` + `cdn_product_feature_mapping.rel`) so the flow exercises a JOIN-based query, a heatmap, a metric card, a horizontal bar, and a pie — covering more of the renderer than a single-table demo would.
+
+#### [dashboards/create_and_render.py](dashboards/create_and_render.py)
+**Create five panels, bundle into a dashboard, execute in parallel, render**
+
+Learn how to:
+- Create SQL-backed visualizations with `create_visualization()` (minimum body, server fills defaults)
+- Bundle visualizations into a dashboard with `create_dashboard()` (panels auto-flow or use explicit `layout: {x, y, w, h}`)
+- Execute every panel in parallel with `execute_dashboard()` — one SDK call replaces a 2N+1 sequential loop
+- Map the typed visualization + executed rows to plain ECharts JSON via `to_echarts_option(viz, data)` — covers bar, horizontalBar, line, area, pie, heatmap, scatter, plus table-mode and metric-mode dispatch
+- Render a layout-aware composite HTML page using CSS Grid that honours each panel's stored `{x, y, w, h}`
+- Update visualizations or dashboards via `update_*(id, partial)` — send only the fields you want to change
+
+```bash
+pip install pyecharts                    # optional, for the HTML render at the end
+python -m examples.dashboards.create_and_render
+```
+
+Point `INFINO_DEMO_DATASET` / `INFINO_DEMO_MAPPING_DATASET` at your own indices to run against your own data.
+
+#### [dashboards/advanced_chart_config.py](dashboards/advanced_chart_config.py)
+**Fine-grained chart configuration — every config knob explained inline**
+
+Learn how to control:
+- `description` and `tags` for list-view discoverability
+- `mapping.x` / `mapping.y` / `mapping.series_split_by` to override the auto-picker
+- `options.legend.show` / `position` (top / right / bottom / left)
+- `options.bar_max_width` to cap bar width in wide panels
+- `options.pie_donut_ratio` to turn a pie into a donut (`0.55` is a typical donut look)
+- `options.metric_formatting` (`prefix`, `suffix`, `decimals`, `thousands_separator`, `abbreviate`) for KPI cards
+- `source.sql.limit` / `offset` for paginated execution
+- `visualization_mode` to switch between chart / table / metric rendering
+
+```bash
+python -m examples.dashboards.advanced_chart_config
+```
+
+#### Agent-friendly reference: [dashboards/AGENTS.md](dashboards/AGENTS.md)
+AI coding agents (Claude Code, Cursor, aider, Cline, Codex CLI, OpenHands) read `AGENTS.md` files for project-specific rules. The dashboards `AGENTS.md` carries task→SDK-call mappings, minimal chart skeletons per type, decision rules, the full config-field reference, and common pitfalls. Drop it in any agent-driven workspace and the agent will pattern-match correct visualization code.
+
 ### [promql_metrics.py](promql_metrics.py)
 **PromQL metrics and time-series queries**
 

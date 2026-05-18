@@ -39,6 +39,12 @@ Official Python SDK for [Infino](https://infino.ai) - an agentic search engine.
   - [Manage Datasets](#manage-datasets)
   - [Record Operations](#record-operations)
   - [Dataset Enrichment](#dataset-enrichment)
+- [Visualize – Build and Execute Visualizations](#visualize--build-and-execute-visualizations)
+  - [Create](#create)
+  - [Execute and render](#execute-and-render)
+  - [Update](#update)
+  - [Manage](#manage)
+  - [Group visualizations into a dashboard](#group-visualizations-into-a-dashboard)
 - [Govern – Security & Access Control](#govern--security--access-control)
   - [Complete Workflow Example](#complete-workflow-example)
   - [User Management](#user-management)
@@ -568,6 +574,184 @@ enrich_policy = json.dumps({
 
 sdk.enrich_dataset("sales-correlation", enrich_policy)
 ```
+
+## Visualize – Build and Execute Visualizations
+
+Persist a visualization spec on the server, then execute it from anywhere — a
+notebook, a backend job, a dashboard you're building yourself — and get back
+normalized `{columns, rows, metadata}` ready to plot with your library of
+choice (pyecharts, plotly, altair, matplotlib, …).
+
+Currently supports SQL visualizations with a raw query in
+`source.sql.raw_query`. `querydsl` and `promql` source slots exist in the
+schema for future support. Runtime filter / time-range overrides are not
+yet wired through — bake your filters into the SQL string for now.
+
+### Create
+
+The server fills defaults for every field you omit, so the minimum spec is
+small — `title`, `source` (with `kind`, `index`, and either a `raw_query` for
+SQL or the corresponding payload for other source kinds), and `chart.type`.
+
+```python
+viz = sdk.create_visualization({
+    "title": "Orders by currency",
+    "source": {
+        "kind": "sql",
+        "index": "sample-ecommerce-data.rel",
+        "sql": {
+            "raw_query": (
+                'SELECT currency, COUNT(*) AS count '
+                'FROM "sample-ecommerce-data.rel" '
+                "GROUP BY currency"
+            ),
+        },
+    },
+    "chart": {"type": "bar"},
+})
+viz_id = viz["id"]
+```
+
+`create_visualization` returns a response wrapper: the server-assigned `id`,
+`created_at`, `updated_at`, and `kind` at the top level, with the full
+visualization (every field you sent plus all server-filled defaults) under
+`attributes`. The same shape is returned by `get_visualization` and
+`update_visualization`.
+
+### Execute and render
+
+```python
+data = sdk.execute_visualization(viz_id)
+# data["columns"]  — [{"name": "...", "type": "string"|"number"|"date"|"boolean"|"null"}]
+# data["rows"]     — [{<col>: <val>, ...}, ...]
+# data["metadata"] — {"source_kind", "row_count", "truncated", "took_ms", "executed_query"}
+```
+
+Pull out the values with plain list comprehensions and hand them to your chart
+library:
+
+```python
+from pyecharts import options as opts
+from pyecharts.charts import Bar
+
+xs = [row["currency"] for row in data["rows"]]
+ys = [row["count"]    for row in data["rows"]]
+
+Bar() \
+    .add_xaxis(xs) \
+    .add_yaxis("Orders", ys) \
+    .set_global_opts(title_opts=opts.TitleOpts(title="Orders by currency")) \
+    .render("orders_by_currency.html")
+```
+
+The SDK deliberately stays out of the rendering decision — you keep your
+existing data tooling (`pandas.DataFrame(data["rows"])` if you want a frame,
+or feed rows straight to plotly / altair / matplotlib).
+
+### Update
+
+Send only the fields you want to change — anything you don't send is
+preserved. Send a field as `null` to unset it. Lists are replaced wholesale,
+not merged element-wise. `id`, `schema_version`, `created_at`, and
+`created_by` are immutable; the server ignores attempts to overwrite them.
+*(Wire format: [RFC 7396 JSON Merge Patch](https://datatracker.ietf.org/doc/html/rfc7396).)*
+
+```python
+# Rename a viz and tighten the SQL row limit, without re-sending the rest:
+sdk.update_visualization(viz_id, {
+    "title": "Orders by currency (last 30 days)",
+    "source": {"sql": {"limit": 200}},
+})
+```
+
+### Manage
+
+```python
+viz     = sdk.get_visualization(viz_id)             # full response with attributes
+listing = sdk.list_visualizations(limit=50)         # {"items": [response, ...]}
+sdk.delete_visualization(viz_id)
+```
+
+`list_visualizations` accepts `limit` (server default 500, max 1000) and
+`offset` (default 0) for pagination.
+
+### Group visualizations into a dashboard
+
+```python
+dashboard = sdk.create_dashboard({
+    "title": "Ecommerce overview",
+    "panels": [
+        {"viz_id": viz_a["id"]},
+        {"viz_id": viz_b["id"]},
+    ],
+})
+```
+
+The server fills sane defaults — dashboard-level options, per-panel ids,
+`title_override: null`, and a 2-column auto-layout for the panels (you can
+supply an explicit `layout: {x, y, w, h}` per panel to override).
+
+Iterate panels and execute each underlying viz to render the dashboard
+yourself:
+
+```python
+dash = sdk.get_dashboard(dashboard["id"])
+for panel in dash["attributes"]["panels"]:
+    if panel["kind"] == "visualization":
+        data = sdk.execute_visualization(panel["viz_id"])
+        # render `data["rows"]` with your chart library of choice
+```
+
+### Execute a whole dashboard in one call
+
+The loop above issues **2N + 1 HTTP calls** for an N-panel dashboard (the
+dashboard fetch plus a `get_visualization` and `execute_visualization` per
+panel). For a 16-panel dashboard that's ≈ 1.5 s of wall time. Use
+`execute_dashboard` to fan that out in parallel and return enriched
+per-panel data in one call:
+
+```python
+panels = sdk.execute_dashboard(dashboard["id"])
+# panels = [
+#   {"id", "kind", "layout", "title_override",
+#    "viz":  {<full Visualization>}    | None,
+#    "data": {"columns", "rows", "metadata"} | None,
+#    "error": {"status", "message"}    | None},
+#   ...
+# ]
+
+for p in panels:
+    if p["kind"] != "visualization" or p["error"]:
+        continue
+    spec = sdk.to_echarts_option(p["viz"], p["data"])
+    # render `spec["option"]` at `p["layout"]`
+```
+
+Internally the SDK uses a ``ThreadPoolExecutor`` to fire panel fetches and
+executions concurrently. Per-panel errors are isolated (one bad panel
+doesn't fail the whole call); the failing panel's entry has ``error`` set
+and ``viz``/``data`` left ``None``.
+
+CRUD for dashboards mirrors the visualization API:
+
+```python
+dash    = sdk.get_dashboard(dashboard_id)             # full response with attributes
+listing = sdk.list_dashboards(limit=50)               # {"items": [response, ...]}
+sdk.update_dashboard(dashboard_id, {"title": "..."})  # PATCH partial update
+sdk.delete_dashboard(dashboard_id)
+```
+
+`update_dashboard` follows the same JSON Merge Patch semantics as
+`update_visualization`. Note that arrays (e.g. `panels`) are replaced
+wholesale by the patch, not merged element-wise — to add a panel, send the
+full updated list.
+
+Two runnable examples live under [`examples/dashboards/`](examples/dashboards/):
+
+- **[`create_and_render.py`](examples/dashboards/create_and_render.py)** — End-to-end flow: create five visualizations, bundle them into a dashboard, execute every panel in parallel, and render a layout-aware composite HTML page via CSS Grid. Run with `python -m examples.dashboards.create_and_render`.
+- **[`advanced_chart_config.py`](examples/dashboards/advanced_chart_config.py)** — Every visualization config knob exercised with inline annotations (mapping, legend, bar width, donut ratio, metric formatting, tags, description, source pagination). Run with `python -m examples.dashboards.advanced_chart_config`.
+
+Shared helpers (credentials, logging, renderer) live in [`examples/dashboards/common/`](examples/dashboards/common/). If you're driving the SDK with an AI coding agent (Claude Code, Cursor, aider, Cline, Codex CLI, OpenHands), drop [`examples/dashboards/AGENTS.md`](examples/dashboards/AGENTS.md) into your workspace — it carries task→SDK-call mappings, chart skeletons per type, and the full config-field reference in a form agents pattern-match well.
 
 ## Govern – Security & Access Control
 

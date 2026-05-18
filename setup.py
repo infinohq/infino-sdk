@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="infino-sdk",
-    version="0.3.0",
+    version="0.5.0",
     description="Python SDK for Infino API",
     author="Infino AI, Inc.",
     author_email="support@infino.ai",
@@ -13,16 +13,16 @@ setup(
         "websockets>=10.0",
         "PyYAML>=6.0",
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.8",
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
         "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
     ],
 )

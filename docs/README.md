@@ -5,7 +5,10 @@ This folder contains the OpenAPI specification for the Infino API and SDK docume
 ## Files
 
 - `openapi.yaml` - OpenAPI 3.1.0 specification
+- [sdk_methods.md](sdk_methods.md) - Per-method reference for every SDK function (input parameters, sample input, output)
 - [connectors.md](connectors.md) - Connectors: supported sources, SDK usage, and how to find required configs
+- [dashboards.md](dashboards.md) - Dashboards & Visualizations: quickstart, SDK surface, request/response, layout, full configuration reference, troubleshooting
+- [streaming_responses.md](streaming_responses.md) - WebSocket streaming response format for Fino AI
 
 ## Viewing the API Documentation Locally
 
