@@ -52,3 +52,54 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    # Creates a GitHub Release for the pushed tag with auto-generated notes
+    # from the commits since the previous tag. Runs only after the PyPI
+    # publish job succeeds so a failed publish doesn't produce a phantom
+    # Release pointing at an unpublished version.
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to create the Release
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # auto-generated notes need full history
+
+      - name: Ensure GitHub Release exists with release notes
+        # Behaviour matrix:
+        #   - Tag pushed via CLI, no Release exists       → create with auto notes
+        #   - UI "Publish release" with empty body         → fill in auto notes
+        #   - UI "Publish release" with hand-written body  → preserve, don't overwrite
+        # Auto notes are generated via GitHub's same release-notes endpoint
+        # the UI's "Generate release notes" button uses, so content is
+        # identical regardless of trigger.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          NOTES=$(gh api "/repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            --method POST \
+            -f tag_name="${GITHUB_REF_NAME}" \
+            --jq '.body')
+
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            EXISTING_BODY=$(gh release view "${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --json body --jq '.body')
+            if [ -z "${EXISTING_BODY}" ]; then
+              echo "Release ${GITHUB_REF_NAME} exists with empty body — filling in auto-generated notes."
+              gh release edit "${GITHUB_REF_NAME}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --notes "${NOTES}"
+            else
+              echo "Release ${GITHUB_REF_NAME} already has hand-written notes; preserving them."
+            fi
+          else
+            echo "Creating Release ${GITHUB_REF_NAME} with auto-generated notes."
+            gh release create "${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${GITHUB_REF_NAME}" \
+              --notes "${NOTES}"
+          fi
