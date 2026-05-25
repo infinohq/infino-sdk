@@ -1710,6 +1710,7 @@ def _normalize_filter(f: Dict[str, Any]) -> Dict[str, Any]:
     ``index`` (None). Caller-provided values always win.
     """
     import uuid
+
     return {
         "id": f.get("id") or uuid.uuid4().hex,
         "field": f["field"],
