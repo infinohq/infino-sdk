@@ -11,6 +11,7 @@ Official Python SDK for [Infino](https://infino.ai) - an agentic search engine.
 - **Connect**: Access your data sources without data movement
 - **Query**: Natural language, SQL, Query DSL, and PromQL across all sources
 - **Correlate**: Pull together data from different sources for cross-source correlation
+- **Visualize**: Save chart specs server-side; execute them from notebooks, backend jobs, or your own dashboards with plot-ready `{columns, rows}` results
 - **Govern**: Fine-grained RBAC for all your data
 
 ## Table of Contents
@@ -45,6 +46,7 @@ Official Python SDK for [Infino](https://infino.ai) - an agentic search engine.
   - [Update](#update)
   - [Manage](#manage)
   - [Group visualizations into a dashboard](#group-visualizations-into-a-dashboard)
+  - [Execute a whole dashboard in one call](#execute-a-whole-dashboard-in-one-call)
 - [Govern – Security & Access Control](#govern--security--access-control)
   - [Complete Workflow Example](#complete-workflow-example)
   - [User Management](#user-management)
@@ -168,6 +170,24 @@ Complete reference of SDK methods organized by category. Click any method to jum
 | [`create_import_job(source_type, config)`](#import-jobs) | Create import job |
 | [`get_import_jobs()`](#import-jobs) | List import jobs |
 | [`delete_import_job(job_id)`](#import-jobs) | Delete import job |
+
+### Visualizations & Dashboards (13 methods)
+
+| Method | Description |
+|--------|-------------|
+| [`create_visualization(spec)`](#create) | Create a chart spec (raw SQL or Builder mode) |
+| [`get_visualization(viz_id)`](#manage) | Fetch one — full spec lives in `attributes` |
+| [`list_visualizations(limit=None, offset=None)`](#manage) | Paginated listing |
+| [`update_visualization(viz_id, partial)`](#update) | JSON Merge Patch — send only what changes |
+| [`delete_visualization(viz_id)`](#manage) | Delete by id |
+| [`execute_visualization(viz_id, filters=None, time_range=None)`](#execute-and-render) | Run the saved SQL and return `{columns, rows, metadata}` |
+| [`to_echarts_option(viz, data)`](#execute-and-render) | Pure function — turn viz + data into ECharts JSON (also handles `table` and `metric` shapes) |
+| [`create_dashboard(spec)`](#group-visualizations-into-a-dashboard) | Group panels into a dashboard with auto-flow or explicit `{x, y, w, h}` layout |
+| [`get_dashboard(dashboard_id)`](#group-visualizations-into-a-dashboard) | Fetch one |
+| [`list_dashboards(limit=None, offset=None)`](#group-visualizations-into-a-dashboard) | Paginated listing |
+| [`update_dashboard(dashboard_id, partial)`](#group-visualizations-into-a-dashboard) | JSON Merge Patch — `panels` list replaced wholesale |
+| [`delete_dashboard(dashboard_id)`](#group-visualizations-into-a-dashboard) | Delete by id |
+| [`execute_dashboard(dashboard_id, max_workers=16, filters=None, time_range=None)`](#execute-a-whole-dashboard-in-one-call) | Parallel fanout — one call for an N-panel dashboard, per-panel error isolation |
 
 ### RBAC & Governance (11 methods)
 
@@ -582,16 +602,27 @@ notebook, a backend job, a dashboard you're building yourself — and get back
 normalized `{columns, rows, metadata}` ready to plot with your library of
 choice (pyecharts, plotly, altair, matplotlib, …).
 
-Currently supports SQL visualizations with a raw query in
-`source.sql.raw_query`. `querydsl` and `promql` source slots exist in the
-schema for future support. Runtime filter / time-range overrides are not
-yet wired through — bake your filters into the SQL string for now.
+Two ways to create a visualization:
+
+- **Raw SQL** — set `source.sql.raw_query` to a full SELECT statement when you
+  want full SQL power (JOINs, window functions, CTEs, dialect-specific syntax).
+- **Builder mode** — set `mapping.x` / `mapping.y` / `aggregation_type` and
+  omit `raw_query`. The gateway generates the SQL, including dialect-aware
+  quoting for connector-backed sources (MySQL, BigQuery, Snowflake, …).
+
+Filter chips can be saved on the visualization itself (`filters` field) or
+passed at execute time via the `filters=` kwarg — both shapes AND-merge into
+the executed SQL via the server-side rewriter, so plot-ready rows always
+respect the active filters. A `time_range=` kwarg on `execute_visualization`
+and `execute_dashboard` applies a runtime time window the same way.
 
 ### Create
 
 The server fills defaults for every field you omit, so the minimum spec is
-small — `title`, `source` (with `kind`, `index`, and either a `raw_query` for
-SQL or the corresponding payload for other source kinds), and `chart.type`.
+small — `title`, `source` (with `kind`, `index`, and either a `raw_query` or
+the Builder-mode fields), and `chart.type`.
+
+**Raw SQL** — write the full query yourself:
 
 ```python
 viz = sdk.create_visualization({
@@ -612,11 +643,55 @@ viz = sdk.create_visualization({
 viz_id = viz["id"]
 ```
 
+**Builder mode** — describe the chart in terms of columns + an aggregation
+and let the gateway generate the SQL:
+
+```python
+viz = sdk.create_visualization({
+    "title": "Orders by currency",
+    "source": {
+        "kind": "sql",
+        "index": "sample-ecommerce-data.rel",
+        "sql": {"limit": 50},
+        # no raw_query — gateway generates it from the fields below
+    },
+    "chart": {"type": "bar"},
+    "mapping": {"x": "currency", "y": ["count"], "series_split_by": None},
+    "aggregation_type": "count",   # count | sum | avg | none
+})
+```
+
 `create_visualization` returns a response wrapper: the server-assigned `id`,
 `created_at`, `updated_at`, and `kind` at the top level, with the full
 visualization (every field you sent plus all server-filled defaults) under
 `attributes`. The same shape is returned by `get_visualization` and
 `update_visualization`.
+
+**Top-N pattern** — use `source.sql.order_by` to override the default
+`ORDER BY <x-axis>`. Reference the aggregation alias (`sum_<col>`,
+`avg_<col>`, or `count`):
+
+```python
+# Top 10 customers by total revenue (BigQuery)
+viz = sdk.create_visualization({
+    "source": {
+        "kind": "sql", "index": "orders", "connector_id": "bigquery",
+        "sql": {
+            "metrics": [{"function": "sum", "column": "revenue"}],
+            "order_by": [{"column": "sum_revenue", "direction": "desc"}],
+            "limit": 10,
+        },
+    },
+    "chart": {"type": "bar"},
+    "mapping": {"x": "customer_name", "y": ["revenue"]},
+})
+# Emits: SELECT `customer_name`, SUM(`revenue`) as `sum_revenue`
+#        FROM `orders` GROUP BY `customer_name`
+#        ORDER BY `sum_revenue` DESC LIMIT 10
+```
+
+See [Top-N pattern](docs/dashboards.md#top-n-pattern) for the alias-name
+contract and multi-column ORDER BY examples.
 
 ### Execute and render
 
@@ -624,8 +699,41 @@ visualization (every field you sent plus all server-filled defaults) under
 data = sdk.execute_visualization(viz_id)
 # data["columns"]  — [{"name": "...", "type": "string"|"number"|"date"|"boolean"|"null"}]
 # data["rows"]     — [{<col>: <val>, ...}, ...]
-# data["metadata"] — {"source_kind", "row_count", "truncated", "took_ms", "executed_query"}
+# data["metadata"] — {"source_kind", "row_count", "truncated", "took_ms",
+#                     "executed_query", "filters_applied", "filters_skipped"}
 ```
+
+Apply filter chips at execute time without modifying the saved spec by
+passing `filters=`. The gateway AND-merges them into the SQL via the
+server-side rewriter; saved filters (on the viz itself) still apply too:
+
+```python
+data = sdk.execute_visualization(viz_id, filters=[
+    {"field": "currency", "operator": "is_one_of", "value": ["USD", "EUR"]},
+    {"field": "@timestamp", "operator": "is_between",
+     "value": {"from": "2026-04-01T00:00:00Z", "to": "2026-05-01T00:00:00Z"},
+     "is_time_filter": True},
+])
+# data["metadata"]["filters_applied"] = ["currency", "@timestamp"]
+# data["metadata"]["filters_skipped"] = []
+```
+
+Supported operators: `is`, `is_not`, `is_one_of`, `is_not_one_of`, `exists`,
+`does_not_exist`, `is_between`, `is_not_between`. Send `field` raw — the
+gateway handles dialect-specific quoting.
+
+```python
+# Apply a time window at execute time
+data = sdk.execute_visualization(viz_id, time_range={
+    "from": "2026-04-01T00:00:00Z",
+    "to":   "2026-05-01T00:00:00Z",
+})
+```
+
+Same kwarg on `execute_dashboard` for dashboard-wide time windows. Server-side
+this becomes an `is_between` filter on the viz's time column
+(`source.sql.time_column`, default `@timestamp`). Accepts ISO-8601 strings or
+epoch-ms numbers (UTC); absolute timestamps only.
 
 Pull out the values with plain list comprehensions and hand them to your chart
 library:
@@ -727,6 +835,25 @@ for p in panels:
     # render `spec["option"]` at `p["layout"]`
 ```
 
+`filters=` applies the same filter chips to every panel in the fanout —
+useful for dashboard-wide filter bars:
+
+```python
+panels = sdk.execute_dashboard(dashboard["id"], filters=[
+    {"field": "region", "operator": "is", "value": "EMEA"},
+])
+```
+
+`time_range=` does the same for a dashboard-level time picker — every panel's
+SQL gets the synthetic `is_between` filter on its `source.sql.time_column`:
+
+```python
+panels = sdk.execute_dashboard(dashboard["id"], time_range={
+    "from": "2026-04-01T00:00:00Z",
+    "to":   "2026-05-01T00:00:00Z",
+})
+```
+
 Internally the SDK uses a ``ThreadPoolExecutor`` to fire panel fetches and
 executions concurrently. Per-panel errors are isolated (one bad panel
 doesn't fail the whole call); the failing panel's entry has ``error`` set
@@ -746,9 +873,10 @@ sdk.delete_dashboard(dashboard_id)
 wholesale by the patch, not merged element-wise — to add a panel, send the
 full updated list.
 
-Two runnable examples live under [`examples/dashboards/`](examples/dashboards/):
+Runnable examples live under [`examples/dashboards/`](examples/dashboards/):
 
 - **[`create_and_render.py`](examples/dashboards/create_and_render.py)** — End-to-end flow: create five visualizations, bundle them into a dashboard, execute every panel in parallel, and render a layout-aware composite HTML page via CSS Grid. Run with `python -m examples.dashboards.create_and_render`.
+- **[`builder_mode.py`](examples/dashboards/builder_mode.py)** — Side-by-side Raw SQL vs Builder mode creation against the same dataset, plus runtime `filters=` usage on both `execute_visualization` and `execute_dashboard`. Run with `python -m examples.dashboards.builder_mode`.
 - **[`advanced_chart_config.py`](examples/dashboards/advanced_chart_config.py)** — Every visualization config knob exercised with inline annotations (mapping, legend, bar width, donut ratio, metric formatting, tags, description, source pagination). Run with `python -m examples.dashboards.advanced_chart_config`.
 
 Shared helpers (credentials, logging, renderer) live in [`examples/dashboards/common/`](examples/dashboards/common/). If you're driving the SDK with an AI coding agent (Claude Code, Cursor, aider, Cline, Codex CLI, OpenHands), drop [`examples/dashboards/AGENTS.md`](examples/dashboards/AGENTS.md) into your workspace — it carries task→SDK-call mappings, chart skeletons per type, and the full config-field reference in a form agents pattern-match well.
@@ -991,6 +1119,11 @@ Complete working examples organized by workflow:
 
 ### Correlate Examples
 - [**upload_json.py**](examples/upload_json.py) - Pull data together for cross-source analysis
+
+### Visualize Examples
+- [**dashboards/create_and_render.py**](examples/dashboards/create_and_render.py) - Build a 5-panel dashboard end-to-end, render as composite HTML
+- [**dashboards/builder_mode.py**](examples/dashboards/builder_mode.py) - Builder mode + runtime filter chips on both viz and dashboard execute
+- [**dashboards/advanced_chart_config.py**](examples/dashboards/advanced_chart_config.py) - Every visualization config knob with inline annotations
 
 ### Govern Examples
 - [**user_management.py**](examples/user_management.py) - Centralized access control

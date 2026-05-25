@@ -5,6 +5,98 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-05-25
+
+### Added (SDK surface)
+- `execute_visualization(viz_id, filters=...)` — optional `filters` kwarg
+  applies runtime filter chips on top of any filters saved on the
+  visualization. The gateway AND-merges them into the executed SQL via the
+  server-side rewriter. Eight operators supported:
+  `is`, `is_not`, `is_one_of`, `is_not_one_of`, `exists`, `does_not_exist`,
+  `is_between`, `is_not_between`. For `is_between` time filters, `value` is
+  either `[lo, hi]` (numeric) or `{"from": ..., "to": ...}` (time-range).
+- `execute_dashboard(dashboard_id, filters=...)` — same kwarg, applied to
+  every panel's `execute_visualization` call in the parallel fanout.
+- `execute_visualization(viz_id, time_range={"from", "to"})` — runtime
+  time-range override applied as a synthetic `is_between` filter on the
+  viz's time column. Send ISO-8601 strings or epoch-ms numbers (UTC).
+  Absolute timestamps only; relative syntax (e.g. `"now-1h"`) is not
+  supported.
+- `execute_dashboard(dashboard_id, time_range=...)` — same kwarg, applied
+  to every panel in the parallel fanout.
+- Response metadata now surfaces `filters_applied` (fields the rewriter
+  injected) and `filters_skipped` (`{field, reason}` for any the rewriter
+  couldn't safely inject — e.g. parser edge cases). Unrecognised filters
+  never fail the execute call; the original SQL still runs.
+- `_normalize_filter()` helper auto-fills `id` (uuid4), `enabled` (True),
+  `is_time_filter` (False), `query_type` (None), `index` (None) so callers
+  only need to specify `field`, `operator`, and `value`.
+- `source.sql.time_column` field — declare which column the runtime
+  time-range filter targets. Defaults to `@timestamp` (native CoreDB
+  convention). Set explicitly for connector vizzes whose time column is
+  e.g. `created_at`.
+
+### Added (gateway-side, transparent to existing callers)
+- `source.sql.order_by[]` is now honored in Builder mode. Unlocks the
+  "top N by metric" pattern via `ORDER BY <metric_alias> DESC`. Each entry
+  is `{column, direction}` where `column` may be a real schema column OR an
+  aggregation alias the gateway generates (`count`, `sum_<col>`,
+  `avg_<col>`). Falls back to `ORDER BY <x>` when omitted. See
+  [Top-N pattern](docs/dashboards.md#top-n-pattern) for the full example.
+- Dialect-aware identifier quoting in Builder mode for **all** dimensional
+  columns (previously only the table was quoted dialect-aware). Fixes
+  CoreDB's null-bucket case-normalization bug and BigQuery's "Cannot GROUP
+  BY literal values" / "Unexpected string literal" errors on Builder-mode
+  payloads. Send identifiers raw — the gateway quotes per connector
+  dialect.
+- Expanded column-type normalization in execute responses to handle
+  BigQuery (`INT64`, `FLOAT64`, `BIGNUMERIC`), MySQL (`BIGINT`,
+  `TINYINT`, `SMALLINT`, `MEDIUMINT`), Snowflake (`TIMESTAMP_LTZ`,
+  `TIMESTAMP_NTZ`, `TIMESTAMP_TZ`, parameterized `NUMBER(38,2)`),
+  Postgres (`REAL`, `MONEY`, `UUID`, `TIMESTAMPTZ`), and parameterized
+  types (`VARCHAR(255)`, `INT(11)`, `DOUBLE PRECISION`). Previously these
+  all fell to `"string"` in response metadata, silently breaking chart
+  rendering for numeric columns.
+
+### Changed
+- Saved top-level `time_range` on a visualization spec was previously stored
+  but ignored at execute time. **It is now applied** — flag this if any of
+  your saved vizzes have a populated `time_range`.
+
+### Fixed
+- Dashboard top-level time picker now affects SQL visualizations the same way
+  it has always affected QueryDSL visualizations. Previously the picker's
+  value was dropped on the floor for SQL panels.
+- PATCH and PUT on dashboards/visualizations now re-apply server defaults
+  after the merge/replace. Previously a PATCH like
+  `{ "panels": [{ "viz_id": "x" }] }` stripped server-stamped panel
+  defaults (`kind`, `id`, `layout`) because RFC 7396 JSON Merge Patch
+  replaces arrays wholesale. Root cause of the
+  `Cannot read properties of undefined (reading 'x')` error some callers
+  saw when rendering dashboards that had been patched in-place.
+
+### Documentation
+- Builder-mode docs in `docs/dashboards.md` — create visualizations
+  without writing SQL by setting `mapping.x` / `mapping.y[]` /
+  `aggregation_type` and leaving `source.sql.raw_query` null. The gateway
+  generates dialect-aware SQL server-side.
+- Aggregation cheat sheet: `count`, `sum`, `avg`, `none` — when to use which.
+- Top-N pattern example covering the `order_by` alias contract.
+- New `examples/dashboards/builder_mode.py` — runnable end-to-end example
+  showing both raw-SQL and Builder-mode visualization creation in a single
+  dashboard, plus runtime filter and time-range application.
+
+### Important contracts
+- **Filter identifiers are raw** — send `"feature_name"`, never
+  `` "`feature_name`" `` or `"\"feature_name\""`. The gateway quotes per
+  the connector dialect (backticks for MySQL/BigQuery, double-quotes
+  elsewhere). Pre-quoting ties your filter to a specific dialect and
+  breaks portability. Same convention applies to `mapping.x/y/series_split_by`
+  and `metrics[].column` in Builder mode.
+- Relative time syntax in `time_range` (e.g. `"now-1h"`) is **not yet
+  supported**. Send absolute ISO-8601 or epoch-ms timestamps; the SDK does
+  not expand relative shortcuts client-side. Coming in a follow-up.
+
 ## [0.5.0] - 2026-05-15
 
 ### Added
