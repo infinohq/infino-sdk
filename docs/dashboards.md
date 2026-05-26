@@ -69,11 +69,123 @@ for p in panels:
 
 The full end-to-end script (creating five real charts, bundling them into a dashboard, and rendering a layout-aware HTML page via CSS Grid) lives in [examples/dashboards/](../examples/dashboards/).
 
+## Builder mode — no SQL required
+
+The Quickstart above writes a `raw_query` by hand. That's the right choice when you need full SQL power, but it puts the burden of GROUP BY / aggregation / dialect-quoting on the caller. **Builder mode** lets you describe the chart in terms of columns + an aggregation, and the gateway generates the SQL for you — including correct dialect quoting for connector-backed sources (MySQL, BigQuery, Snowflake, etc.).
+
+Same `create_visualization` call; just omit `source.sql.raw_query` and set `mapping` + `aggregation_type` instead:
+
+```python
+viz = sdk.create_visualization({
+    "title": "Top denied features",
+    "source": {
+        "kind": "sql",
+        "index": "license_events",
+        # raw_query omitted — gateway generates it
+        "sql": {"limit": 10},
+    },
+    "chart": {"type": "bar"},
+    "mapping": {"x": "feature_name", "y": ["denials"], "series_split_by": None},
+    "aggregation_type": "count",
+})
+```
+
+The gateway emits SQL equivalent to:
+
+```sql
+SELECT feature_name, COUNT(*) as count FROM "license_events"
+GROUP BY feature_name ORDER BY feature_name LIMIT 10
+```
+
+For multi-series charts add `mapping.series_split_by`; for connector-backed sources include `source.connector_id` (e.g. `"mysql"`, `"bigquery"`) so identifiers are quoted in the right dialect.
+
+### Aggregation cheat sheet
+
+Set `aggregation_type` to one of:
+
+| Value | Emits | Use when |
+|-------|-------|----------|
+| `count` | `COUNT(*) as count` | counting rows that match (events, errors, denials) |
+| `sum` | `SUM(y) as sum_y` | each row contributes a quantity (revenue, units, bytes) |
+| `avg` | `AVG(y) as avg_y` | typical value across rows (latency, price, temperature) |
+| `none` | no aggregation | raw rows for scatter / table view |
+
+Picking the wrong one rarely *breaks* the query, but `count` on a numeric column or `sum` on a category column produces nonsense charts. Match the function to what each row represents.
+
+### When to use which mode
+
+| Builder mode | Raw SQL |
+|--------------|---------|
+| Single-table aggregations | Multi-table JOINs |
+| Standard `GROUP BY` + chart axes | Window functions, CTEs, subqueries |
+| Cross-dialect (gateway handles quoting) | Dialect-specific syntax you control |
+| 80% of dashboard panels | Hand-tuned analytical queries |
+
+Mix freely within a dashboard.
+
+### Top-N pattern
+
+The classic "top 10 customers by GMV" pattern uses `source.sql.order_by`
+to override the default `ORDER BY <x-axis>`. The `column` field references
+the **aggregation alias** the gateway generates — `{function}_{column}` for
+`sum`/`avg`, or literal `count` when no Y-axis is provided.
+
+```python
+# Top 10 customers by total GMV (BigQuery)
+viz = sdk.create_visualization({
+    "source": {
+        "kind": "sql",
+        "index": "Customer_PnL_v2",
+        "connector_id": "bigquery",
+        "sql": {
+            "metrics": [{"function": "sum", "column": "Cust_SKU_GMV"}],
+            "order_by": [{"column": "sum_Cust_SKU_GMV", "direction": "desc"}],
+            "limit": 10,
+        },
+    },
+    "chart": {"type": "bar"},
+    "mapping": {"x": "Customer_Name", "y": ["Cust_SKU_GMV"]},
+})
+# Gateway emits:
+#   SELECT `Customer_Name`, SUM(`Cust_SKU_GMV`) as `sum_Cust_SKU_GMV`
+#   FROM `Customer_PnL_v2`
+#   GROUP BY `Customer_Name`
+#   ORDER BY `sum_Cust_SKU_GMV` DESC LIMIT 10
+```
+
+The alias name to reference in `order_by`:
+
+| Aggregation | Alias |
+|-------------|-------|
+| `count` (or no Y-axis) | `count` |
+| `sum` on column `revenue` | `sum_revenue` |
+| `avg` on column `latency_ms` | `avg_latency_ms` |
+
+Direction defaults to `asc`; invalid values clamp to `asc` (caller typos
+won't propagate as SQL). Multiple entries are supported and preserved in
+spec order:
+
+```python
+"order_by": [
+    {"column": "region", "direction": "asc"},
+    {"column": "sum_revenue", "direction": "desc"},
+],
+```
+
+For dimensions that aren't aggregated (scatter plots, raw row mode),
+`order_by` references real schema columns directly:
+
+```python
+"order_by": [{"column": "@timestamp", "direction": "desc"}],
+```
+
 ## SDK surface
 
 ### Visualization lifecycle
 
-- **`create_visualization(spec)`** — Create a chart. The server fills mapping / options / tags / limit when you omit them. Minimum body is `{title, source: {kind, index, sql: {raw_query}}, chart: {type}}`.
+- **`create_visualization(spec)`** — Create a chart. The server fills mapping / options / tags / limit when you omit them. Two minimum bodies:
+  - **Raw SQL:** `{title, source: {kind, index, sql: {raw_query}}, chart: {type}}`
+  - **Builder mode:** `{title, source: {kind, index, sql: {limit?}}, chart: {type}, mapping: {x, y[]}, aggregation_type}` — gateway generates the SQL. See [Builder mode](#builder-mode--no-sql-required).
 - **`get_visualization(viz_id)`** — Fetch one. The chart definition lives in the `attributes` field of the response; `id`, `created_at`, `updated_at` sit alongside it as response metadata.
 - **`list_visualizations(limit=None, offset=None)`** — Returns `{"items": [...]}`. Server defaults: `limit=500` (max 1000), `offset=0`.
 - **`update_visualization(viz_id, partial)`** — Send only the fields you want to change. Anything you don't send is preserved. Send a field as `null` to unset it. Lists are replaced wholesale (not merged element-wise). `id`, `schema_version`, `created_at`, and `created_by` are immutable; the server ignores attempts to overwrite them. *(Wire format: RFC 7396 JSON Merge Patch.)*
@@ -81,13 +193,38 @@ The full end-to-end script (creating five real charts, bundling them into a dash
 
 ### Visualization execution
 
-- **`execute_visualization(viz_id)`** — Run the saved SQL and get plot-ready rows: `{"columns": [{"name", "type"}, ...], "rows": [...], "metadata": {...}}`. Each column's `type` is normalised to `string` / `number` / `boolean` / `date` / `null`, so the renderer can pick axis kinds without re-sniffing.
+- **`execute_visualization(viz_id, filters=None, time_range=None)`** — Run the saved SQL and get plot-ready rows: `{"columns": [{"name", "type"}, ...], "rows": [...], "metadata": {...}}`. Each column's `type` is normalised to `string` / `number` / `boolean` / `date` / `null`, so the renderer can pick axis kinds without re-sniffing.
+  - `filters=` (optional) — list of filter dicts AND-merged into the executed SQL on top of any filters saved on the viz. See [`filters[*]`](#filter-fields) for the dict shape and supported operators.
+  - `time_range=` (optional) — `{"from", "to"}` dict applied as a synthetic `is_between` filter on the viz's time column (`source.sql.time_column`, default `@timestamp`). See [Time-range injection](#time-range-injection).
+  - `metadata.filters_applied` / `metadata.filters_skipped` surface which filters made it into the dispatched SQL vs. which the rewriter couldn't safely inject (parser edge cases, etc.). Unrecognised filters never fail the call — the original SQL still runs.
 - **`to_echarts_option(viz, data)`** — Pure function (no network call). Turns the saved visualization plus its rows into one of three render-ready shapes depending on what makes sense for the data:
   - **`kind == "echarts"`** — `result["option"]` is plain ECharts JSON. Pass it straight to `echarts.setOption(...)` in the browser, or to pyecharts in Python. Covers `bar`, `horizontalBar`, `line`, `area`, `pie`, `heatmap`, `scatter`.
   - **`kind == "table"`** — `result["columns"]` and `result["rows"]` for inline HTML / pandas rendering. Returned when `visualization_mode == "table"` or when the data doesn't fit the declared chart type.
   - **`kind == "metric"`** — `result["value"]` is the single aggregated number with optional `result["formatting"]` (`prefix`, `suffix`, `decimals`, `abbreviate`, `thousands_separator`). Returned when `visualization_mode == "metric"` or `chart.type == "metric" | "gauge"`.
 
   Check `kind` and render accordingly.
+
+### Time-range injection
+
+Apply a time window at execute time without baking it into the SQL:
+
+    data = sdk.execute_visualization(viz_id, time_range={
+        "from": "2026-04-01T00:00:00Z",
+        "to":   "2026-05-01T00:00:00Z",
+    })
+
+Server-side this becomes an `is_between` filter on the viz's time column
+(`source.sql.time_column`, default `@timestamp`). Accepts ISO-8601 strings or
+epoch-ms numbers (UTC). Combined with `filters=` they AND-merge into the
+executed SQL.
+
+Same kwarg on `execute_dashboard` applies the window to every panel in the
+fanout:
+
+    panels = sdk.execute_dashboard(dash_id, time_range={
+        "from": "2026-04-01T00:00:00Z",
+        "to":   "2026-05-01T00:00:00Z",
+    })
 
 ### Dashboard lifecycle
 
@@ -99,9 +236,13 @@ The full end-to-end script (creating five real charts, bundling them into a dash
 
 ### Dashboard execution
 
-- **`execute_dashboard(dashboard_id, max_workers=16)`** — Execute every panel in parallel and return per-panel layout + viz definition + plot-ready rows in one call. Per-panel errors are isolated: if one panel's SQL fails (typo, deleted column, dataset gone), only that panel's `error` field is populated; the rest still return. Lets you ship a partially-broken dashboard without taking the whole page down.
+- **`execute_dashboard(dashboard_id, max_workers=16, filters=None, time_range=None)`** — Execute every panel in parallel and return per-panel layout + viz definition + plot-ready rows in one call. Per-panel errors are isolated: if one panel's SQL fails (typo, deleted column, dataset gone), only that panel's `error` field is populated; the rest still return. Lets you ship a partially-broken dashboard without taking the whole page down.
 
   For a 16-panel dashboard, this replaces 33 sequential HTTP calls (`get_visualization` + `execute_visualization` per panel) with a single SDK call that fans out under the hood.
+
+  `filters=` (optional) is applied to **every panel** — same shape as `execute_visualization`'s kwarg, AND-merged into each panel's SQL via the server-side rewriter. Useful for dashboard-wide filter chips (e.g. "show only product = X across all 16 charts").
+
+  `time_range=` (optional) is applied to **every panel** — same `{"from", "to"}` shape as the `execute_visualization` kwarg. Backs the dashboard-level time picker.
 
 ## Layout
 
@@ -204,7 +345,7 @@ Every other field is optional and server-defaulted. See [Configuration reference
 
 **HTTP Method:** POST  
 **Endpoint:** `/visualizations/{viz_id}/data`  
-**Body:** `{}` (runtime filter / time-range overrides are not yet wired through — bake them into the SQL string for now)
+**Body:** `{}` — optionally pass `filters` (list of filter dicts) and/or `time_range` (`{"from", "to"}`); both are AND-merged into the executed SQL via the server-side rewriter.
 
 ```json
 {
@@ -310,10 +451,11 @@ Every field a visualization spec can carry. Only `title`, `source.kind`, `source
 | `source` | object | (required) | Data source — see [`source.*`](#source-fields) |
 | `chart.type` | enum | (required) | `bar`, `horizontalBar`, `line`, `area`, `scatter`, `pie`, `heatmap`, `metric`, `gauge` |
 | `visualization_mode` | enum | `"chart"` | `"chart"` renders as `chart.type`; `"table"` returns raw rows; `"metric"` returns a single scalar |
-| `mapping` | object | `{x: null, y: [], series_split_by: null}` | See [`mapping.*`](#mapping-fields) |
+| `mapping` | object | `{x: null, y: [], series_split_by: null}` | See [`mapping.*`](#mapping-fields). **In Builder mode, drives SQL generation.** |
+| `aggregation_type` | enum \| null | `null` | `count`, `sum`, `avg`, `none`. **Used in Builder mode** to pick the aggregation function. See [Aggregation cheat sheet](#aggregation-cheat-sheet). |
 | `options` | object | all `null` | Chart-specific options — see [`options.*`](#options-fields) |
-| `filters` | array | `[]` | Saved filters — see [`filters[*]`](#filter-fields). **Saved but not yet applied at execute time.** |
-| `time_range` | object \| null | `null` | Saved time range — see [`time_range`](#time-range). **Saved but not yet applied at execute time.** |
+| `filters` | array | `[]` | Saved filters — see [`filters[*]`](#filter-fields). **AND-merged into the executed SQL at runtime** alongside any `filters=` kwarg you pass to `execute_visualization`. |
+| `time_range` | object \| null | `null` | Saved time range — see [`time_range`](#time-range). **Applied at execute time** as a synthetic `is_between` filter on `source.sql.time_column` (default `@timestamp`). A `time_range=` kwarg on `execute_visualization` / `execute_dashboard` overrides the saved value for that call. |
 | `render` | object \| null | `null` | Escape hatch for full ECharts JSON — see [`render`](#render-escape-hatch) |
 | `tags` | string[] | `[]` | Free-form tags for filtering / grouping in list views |
 | `extensions` | object \| null | omitted | Free-form metadata blob; the server stores it but does not interpret it |
@@ -334,12 +476,13 @@ When `source.kind == "sql"`:
 
 | Field | Type | Default | Effect |
 |-------|------|---------|--------|
-| `source.sql.raw_query` | string | (required) | The SQL string |
+| `source.sql.raw_query` | string \| null | `null` | The SQL string. **Required unless using Builder mode** (set `mapping` + `aggregation_type` instead — the gateway generates SQL from those). |
+| `source.sql.time_column` | string \| null | `null` (server falls back to `@timestamp`) | Column used by the runtime time-range injection. Set explicitly for connector vizzes whose time field is not `@timestamp` (e.g. `created_at` for BigQuery, `_time` for Splunk). |
 | `source.sql.limit` | integer | `50` | Server-side row cap. **Ignored if `raw_query` already has `LIMIT`** |
 | `source.sql.offset` | integer | `0` | Server-side row offset (paginated execution) |
-| `source.sql.dimensions` | array | `[]` | Reserved for future "builder mode" — leave empty when using `raw_query` |
-| `source.sql.metrics` | array | `[]` | Reserved for future builder mode |
-| `source.sql.order_by` | array | `[]` | Reserved for future builder mode |
+| `source.sql.dimensions` | array | `[]` | Reserved for future builder-mode extensions (richer dimension specs) |
+| `source.sql.metrics` | array | `[]` | Builder-mode aggregation spec. Each entry: `{id, function, column, alias?, custom_expression?}`. `function` is one of `count` / `sum` / `avg` / `none`. The gateway reads `metrics[0]` to pick the aggregation; when omitted, defaults to `COUNT(*) as count`. |
+| `source.sql.order_by` | array | `[]` | Builder-mode ORDER BY spec. Each entry: `{column, direction}` with `direction ∈ {asc, desc}`. `column` may be a real schema column OR an aggregation alias the gateway generates (`count`, `sum_<col>`, `avg_<col>`). Falls back to `ORDER BY <x-axis>` when omitted. See [Top-N pattern](#top-n-pattern). |
 
 ### `mapping.*` fields
 
@@ -367,27 +510,49 @@ All option fields default to `null` and only apply when relevant for the chart t
 
 ### `filters[*]` fields
 
-A saved filter declares the *intent* of the visualization — they're stored on the visualization but are **not currently applied at execute time**. Bake equivalent clauses into your `raw_query` until runtime filter injection ships.
+Filters are **AND-merged into the executed SQL** by the server-side rewriter. Two places filters can live, both applied together at execute time:
+
+1. **Saved on the visualization** — set `filters` in the create/update spec. Travels with the viz forever.
+2. **Runtime, per-call** — pass `filters=` to `execute_visualization` / `execute_dashboard`. Useful for filter chips that apply to a single render. Same dict shape.
+
+When both are present they're merged (request filters win on `field` collision).
 
 | Field | Type | Default | Effect |
 |-------|------|---------|--------|
-| `filters[].id` | string | (required) | Stable id for this filter |
-| `filters[].field` | string | (required) | Column or field name |
+| `filters[].id` | string | auto-uuid via SDK | Stable id for this filter. The SDK auto-fills a uuid4 hex when omitted; only matters if you need to reference the same filter across update calls. |
+| `filters[].field` | string | (required) | Column or field name — **raw, no quoting** (see note below) |
 | `filters[].operator` | enum | (required) | `is`, `is_not`, `is_one_of`, `is_not_one_of`, `is_between`, `is_not_between`, `exists`, `does_not_exist` |
-| `filters[].value` | any | (required) | Operand value; shape depends on the operator (`is_between` takes `[lo, hi]`, etc.) |
+| `filters[].value` | any | (required) | Operand value; shape depends on the operator (`is_between` takes `[lo, hi]` or `{from, to}`) |
 | `filters[].enabled` | boolean | `true` | Whether this filter is active |
-| `filters[].is_time_filter` | boolean | `false` | Mark filters that target the `@timestamp` field |
+| `filters[].is_time_filter` | boolean | `false` | Mark filters that target the time column (typically `@timestamp` for native datasets) |
 | `filters[].query_type` | enum \| null | `null` | `"sql"` or `"querydsl"` — narrows the filter to a specific source kind |
 | `filters[].index` | string \| null | `null` | Restricts the filter to a specific index |
 
+#### Identifier conventions
+
+**Send raw identifiers in `field`** — no quoting. The gateway is the single source of truth for SQL dialect handling and will quote per-connector at execute time:
+
+```python
+# Right — raw identifier, server quotes per dialect
+{"field": "feature_name", "operator": "is", "value": "synopsys_vcs", ...}
+
+# Wrong — pre-quoting is fragile; ties your filter to a specific dialect
+{"field": "`feature_name`", ...}     # MySQL-style — only works for MySQL connectors
+{"field": "\"feature_name\"", ...}   # double-quoted — only works for non-MySQL dialects
+```
+
+The gateway tolerates pre-quoted identifiers (skip-if-quoted is in `quote_ident`) for backward compatibility, but the canonical form is raw. Same convention for any code that builds a `Filter` object from scratch.
+
 ### `time_range`
 
-Same status as filters — saved on the visualization but not yet applied at execute time. Two shapes:
+Saved on the visualization and **applied at execute time** as a synthetic `is_between` filter on `source.sql.time_column` (default `@timestamp`). Pass `time_range=` to `execute_visualization` / `execute_dashboard` to override the saved value for a single call — see [Time-range injection](#time-range-injection).
 
 ```json
 {"kind": "absolute", "from": "2026-04-01T00:00:00Z", "to": "2026-05-01T00:00:00Z"}
 {"kind": "relative", "expression": "now-7d"}
 ```
+
+Only absolute timestamps (ISO-8601 strings or epoch-ms numbers, UTC) are honoured at execute time; the `"relative"` shape is stored but not yet evaluated server-side.
 
 ### `render` (escape hatch)
 
@@ -403,7 +568,7 @@ Use sparingly — every override is something `to_echarts_option` no longer mana
 
 ## Source kinds
 
-Currently: **`source.kind == "sql"`** with a non-empty `source.sql.raw_query`. The schema also reserves `querydsl` and `promql` slots; those are not yet wired through `execute_visualization`. Runtime filter / time-range overrides (so you can stamp `time = LAST_24H` onto a saved chart at execute time) are also coming — bake them into the SQL string for now.
+Currently: **`source.kind == "sql"`** with a non-empty `source.sql.raw_query` (raw mode) or `mapping` + `aggregation_type` (Builder mode). The schema also reserves `querydsl` and `promql` slots; those are not yet wired through `execute_visualization`. Runtime filter and time-range overrides are both supported — pass `filters=` and/or `time_range=` to `execute_visualization` / `execute_dashboard` and the gateway AND-merges them into the executed SQL.
 
 ## Troubleshooting
 
@@ -419,7 +584,7 @@ Currently: **`source.kind == "sql"`** with a non-empty `source.sql.raw_query`. T
 
 **`execute_visualization` returns rows but the chart is blank.** Open the executed payload — `data["columns"]` and `data["rows"]`. If `rows` is non-empty but `columns` doesn't include the columns named in `mapping.x` / `mapping.y`, the SDK's column picker has nothing to point at. Adjust your SQL `AS` aliases or your `mapping`.
 
-**I want to override the time range at execute time.** Not yet supported — bake the time clause into `raw_query`. Runtime filter / time-range injection is on the roadmap.
+**I want to override the time range at execute time.** Pass `time_range={"from": ..., "to": ...}` to `execute_visualization` or `execute_dashboard`. The gateway rewrites it into an `is_between` filter on `source.sql.time_column` (default `@timestamp`). See [Time-range injection](#time-range-injection). Absolute timestamps only — relative syntax like `"now-1h"` is not yet evaluated server-side.
 
 ## Examples
 

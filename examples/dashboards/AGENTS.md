@@ -243,15 +243,22 @@ mapping.series_split_by  str | null    REQUIRED for heatmap (cannot be inferred)
 
 ```text
 filters[].id               str    required
-filters[].field            str    required
+filters[].field            str    required — RAW identifier, no quoting (gateway handles dialect)
 filters[].operator         enum   is | is_not | is_one_of | is_not_one_of |
                                   is_between | is_not_between | exists | does_not_exist
-filters[].value            any    operand (is_between takes [lo, hi], etc.)
+filters[].value            any    operand (is_between takes [lo, hi] or {from, to})
 filters[].enabled          bool   true
 filters[].is_time_filter   bool   false
 filters[].query_type       enum   "sql" | "querydsl" | null
 filters[].index            str    null
 ```
+
+**Identifier convention:** always pass `field` as a raw column name, never pre-quoted.
+The gateway quotes per dialect at execute time (backticks for MySQL/BigQuery, double
+quotes for Snowflake/Oracle/native). Pre-quoting (e.g. `` "`feature_name`" `` or
+`'"feature_name"'`) is tolerated server-side for back-compat but is the WRONG idiom
+for new code — it ties the filter to a specific connector and breaks if the viz is
+ever re-pointed at a different source.
 
 ### `time_range`
 

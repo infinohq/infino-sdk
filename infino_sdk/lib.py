@@ -899,20 +899,74 @@ class InfinoSDK:
         url = f"{self.endpoint}/visualizations/{viz_id}"
         return self.request("DELETE", url)
 
-    def execute_visualization(self, viz_id: str) -> Dict[str, Any]:
+    def execute_visualization(
+        self,
+        viz_id: str,
+        filters: Optional[List[Dict[str, Any]]] = None,
+        time_range: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Execute a saved visualization and return plot-ready rows.
 
         Returns ``{"columns": [{"name", "type"}, ...],
                    "rows": [{col: val, ...}, ...],
                    "metadata": {"source_kind", "row_count", "truncated",
-                                "took_ms", "executed_query"}}``.
+                                "took_ms", "executed_query",
+                                "filters_applied", "filters_skipped"}}``.
 
-        Phase 1 supports SQL visualizations with ``source.sql.raw_query``.
-        Filter / time-range overrides will be added in a follow-up; bake them
-        into the SQL query string until then.
+        ``filters`` (optional): runtime filters merged with any filters saved
+        on the visualization itself. The gateway AND-merges these into the
+        executed SQL — same logic the dashboard UI uses when a user adds a
+        filter chip. Each filter is a dict::
+
+            {
+              "field": "feature_name",        # raw identifier — do NOT quote
+              "operator": "is",               # see below
+              "value": "AMS_Designer",
+              # Optional, defaults shown:
+              "id": "<auto>",                 # any unique string; auto-generated if omitted
+              "enabled": True,
+              "is_time_filter": False,        # set True for @timestamp / time columns
+              "query_type": None,
+              "index": None,
+            }
+
+        Supported ``operator`` values: ``is``, ``is_not``, ``is_one_of``,
+        ``is_not_one_of``, ``exists``, ``does_not_exist``, ``is_between``,
+        ``is_not_between``. For ``is_between`` time filters, ``value`` is
+        either ``[lo, hi]`` (numeric) or ``{"from": ..., "to": ...}`` (time
+        range, ISO-8601 strings or epoch-ms).
+
+        ``time_range`` (optional): convenience kwarg for the common case of
+        bounding the viz to a single time window. Shape::
+
+            {"from": "2025-05-22T00:00:00.000Z",
+             "to":   "2026-05-22T00:00:00.000Z"}
+
+        Values are ISO-8601 strings or epoch-ms numbers, interpreted as UTC.
+        Accepts absolute timestamps only. The gateway applies it as a
+        synthetic ``is_between`` filter on the viz's time column — by default
+        ``@timestamp``, or whatever the viz declares via
+        ``source.sql.time_column``.
+
+        Returns the same envelope as before, plus ``metadata.filters_applied``
+        (list of field names successfully injected) and
+        ``metadata.filters_skipped`` (list of ``{field, reason}`` for filters
+        the rewriter couldn't safely inject — e.g. parse failures on exotic
+        SQL). Unrecognised filters do **not** fail the execute call; the
+        original SQL still runs.
+
+        Note on identifiers: send ``field`` raw — the gateway handles
+        dialect-specific quoting (backticks for MySQL/BigQuery, double-quotes
+        elsewhere). Pre-quoting ties your filter to a specific dialect and
+        breaks portability.
         """
         url = f"{self.endpoint}/visualizations/{viz_id}/data"
-        return self.request("POST", url, None, json.dumps({}))
+        body: Dict[str, Any] = {}
+        if filters:
+            body["filters"] = [_normalize_filter(f) for f in filters]
+        if time_range:
+            body["time_range"] = time_range
+        return self.request("POST", url, None, json.dumps(body))
 
     def to_echarts_option(
         self,
@@ -1029,6 +1083,8 @@ class InfinoSDK:
         self,
         dashboard_id: str,
         max_workers: int = 16,
+        filters: Optional[List[Dict[str, Any]]] = None,
+        time_range: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Execute every panel in a dashboard in parallel and return per-panel
         layout + viz config + plot-ready rows.
@@ -1069,6 +1125,22 @@ class InfinoSDK:
         ``max_workers`` caps the parallelism. The default (16) is enough for
         typical dashboards; tune higher only if you're rendering 50+ panels
         and the gateway can absorb the concurrency.
+
+        ``filters`` (optional): runtime filters applied to every visualization
+        panel in the fanout. Same shape and semantics as
+        :meth:`execute_visualization`.
+
+        ``time_range`` (optional): time window applied to every visualization
+        panel in the fanout. Shape::
+
+            {"from": "2025-05-22T00:00:00.000Z",
+             "to":   "2026-05-22T00:00:00.000Z"}
+
+        Values are ISO-8601 strings or epoch-ms numbers, interpreted as UTC.
+        Accepts absolute timestamps only. The gateway applies it per-panel as
+        a synthetic ``is_between`` filter on each viz's time column — by
+        default ``@timestamp``, or whatever the viz declares via
+        ``source.sql.time_column``.
         """
         dash = self.get_dashboard(dashboard_id)
         panels = dash.get("attributes", {}).get("panels", []) or []
@@ -1090,7 +1162,9 @@ class InfinoSDK:
                     return out
                 try:
                     viz_envelope = self.get_visualization(viz_id)
-                    data = self.execute_visualization(viz_id)
+                    data = self.execute_visualization(
+                        viz_id, filters=filters, time_range=time_range
+                    )
                     out["viz"] = viz_envelope.get("attributes", viz_envelope)
                     out["data"] = data
                 except InfinoError as e:
@@ -1626,6 +1700,27 @@ class InfinoSDK:
 # Plain dict output (no pyecharts dependency); the spec is directly consumable
 # by `echarts.setOption(...)` in any language / web stack.
 # ──────────────────────────────────────────────────────────────────────────────
+
+
+def _normalize_filter(f: Dict[str, Any]) -> Dict[str, Any]:
+    """Fill in defaults for fields the gateway requires but callers usually omit.
+
+    Pass-through: ``field``, ``operator``, ``value``. Defaults: ``id`` (uuid4),
+    ``enabled`` (True), ``is_time_filter`` (False), ``query_type`` (None),
+    ``index`` (None). Caller-provided values always win.
+    """
+    import uuid
+
+    return {
+        "id": f.get("id") or uuid.uuid4().hex,
+        "field": f["field"],
+        "operator": f["operator"],
+        "value": f.get("value"),
+        "enabled": f.get("enabled", True),
+        "is_time_filter": f.get("is_time_filter", False),
+        "query_type": f.get("query_type"),
+        "index": f.get("index"),
+    }
 
 
 def _sort_axis_values(values):
