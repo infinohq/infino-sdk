@@ -656,7 +656,7 @@ viz = sdk.create_visualization({
         # no raw_query — gateway generates it from the fields below
     },
     "chart": {"type": "bar"},
-    "mapping": {"x": {"column": "currency"}, "y": ["count"], "series": None},
+    "mapping": {"x": {"column": "currency"}, "y": [], "series": None},
     "aggregation_type": "count",   # count | sum | avg | none
 })
 ```

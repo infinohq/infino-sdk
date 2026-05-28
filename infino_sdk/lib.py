@@ -996,7 +996,7 @@ class InfinoSDK:
           ``area``, ``pie``, ``heatmap``, ``scatter``.
         - ``kind == "table"``: ``result["columns"]`` and ``result["rows"]``
           for inline HTML/pandas rendering. Returned when
-          ``chart.type == "table"`` (Tranche 1 unified rendering kind
+          ``chart.type == "table"`` (unified rendering kind
           under ``chart.type``; the legacy ``visualization_mode`` field
           is retired) or when the data doesn't fit the declared chart type.
         - ``kind == "metric"``: ``result["value"]`` is the single
@@ -1005,7 +1005,7 @@ class InfinoSDK:
           ``chart.type == "metric" | "gauge"``.
 
         The opinionated mapping uses ``viz.mapping.x`` (``{column,
-        bucket?}`` post-Tranche 4), ``viz.mapping.y``, and
+        bucket?}``), ``viz.mapping.y``, and
         ``viz.mapping.series`` to pick columns; if mapping is empty it
         falls back to "first column = X, second = Y" semantics.
         Styling (colors, fonts, tooltip formatters) is intentionally
@@ -1776,7 +1776,7 @@ def _to_echarts_option_impl(
     metadata = data.get("metadata") or {}
     binding = metadata.get("binding") or {}
 
-    # Single source of truth for axis assignments. Tranche 4 renamed
+    # Single source of truth for axis assignments. Renamed
     # `series_split_by` → `series`; fall back to the legacy key so an
     # older gateway response still renders.
     x_col = binding.get("x")

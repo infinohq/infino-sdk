@@ -139,7 +139,7 @@ Learn how to control:
 - `options.pie_donut_ratio` to turn a pie into a donut (`0.55` is a typical donut look)
 - `options.metric_formatting` (`prefix`, `suffix`, `decimals`, `thousands_separator`, `abbreviate`) for KPI cards
 - `source.sql.limit` / `offset` for paginated execution
-- `chart.type` of `"table"` / `"metric"` / `"gauge"` for raw-row / single-value rendering (Tranche 1 unified rendering kind under `chart.type`; the legacy `visualization_mode` field is retired)
+- `chart.type` of `"table"` / `"metric"` / `"gauge"` for raw-row / single-value rendering
 
 ```bash
 python -m examples.dashboards.advanced_chart_config

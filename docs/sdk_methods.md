@@ -1138,7 +1138,7 @@ Column `type` is normalised to `string` / `number` / `boolean` / `date` / `null`
 **Output:** A dict whose `kind` tells you which branch to render:
 
 - `"echarts"` — `result["option"]` is plain ECharts JSON you can pass straight to `echarts.setOption(...)` in the browser, or to pyecharts in Python. Covers `bar`, `horizontalBar`, `line`, `area`, `pie`, `heatmap`, `scatter`.
-- `"table"` — `result["columns"]` and `result["rows"]` for inline HTML / pandas rendering. Returned when `chart.type == "table"` (Tranche 1 unified rendering kind under `chart.type`; the legacy `visualization_mode` field is retired) or when the data doesn't fit the declared chart type.
+- `"table"` — `result["columns"]` and `result["rows"]` for inline HTML / pandas rendering. Returned when `chart.type == "table"` or when the data doesn't fit the declared chart type.
 - `"metric"` — `result["value"]` is the single aggregated number with optional `result["formatting"]` (`prefix`, `suffix`, `decimals`, `abbreviate`, `thousands_separator`). Returned when `chart.type == "metric" | "gauge"`.
 
 ---

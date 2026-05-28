@@ -281,7 +281,7 @@ Rules:
   - `metadata.warnings` is a list of `{code, message}` advisories for silent-fail Builder configs the gateway accepted but that produce surprising results — typo'd `connector_id`, missing axes, `raw_query` colliding with Builder fields. See [Builder-mode warnings](#builder-mode-warnings).
 - **`to_echarts_option(viz, data)`** — Pure function (no network call). Reads `data.metadata.binding` for all axis-to-column mapping; consults the viz spec only for `chart.type`, title, and presentational options (formatting, legend). Returns one of three render-ready shapes depending on what makes sense for the data:
   - **`kind == "echarts"`** — `result["option"]` is plain ECharts JSON. Pass it straight to `echarts.setOption(...)` in the browser, or to pyecharts in Python. Covers `bar`, `horizontalBar`, `line`, `area`, `pie`, `heatmap`, `scatter`.
-  - **`kind == "table"`** — `result["columns"]` and `result["rows"]` for inline HTML / pandas rendering. Returned when `chart.type == "table"` (Tranche 1 unified rendering kind under `chart.type`; the legacy `visualization_mode` field is retired) or when the data doesn't fit the declared chart type.
+  - **`kind == "table"`** — `result["columns"]` and `result["rows"]` for inline HTML / pandas rendering. Returned when `chart.type == "table"` or when the data doesn't fit the declared chart type.
   - **`kind == "metric"`** — `result["value"]` is the single aggregated number with optional `result["formatting"]` (`prefix`, `suffix`, `decimals`, `abbreviate`, `thousands_separator`). Returned when `chart.type == "metric" | "gauge"`.
 
   Check `kind` and render accordingly.
@@ -621,7 +621,7 @@ The SDK fans out to `/visualizations/{viz_id}/data` per panel under the hood and
 |-------------|----------------------------|-------|
 | `bar`, `horizontalBar`, `line`, `area`, `pie`, `heatmap`, `scatter` | `echarts` | Plain ECharts option dict |
 | `metric`, `gauge` | `metric` | Single-value display; respects `options.metric_formatting` |
-| `table` | `table` | Raw `{columns, rows}` for HTML / pandas (set `chart.type: "table"` — Tranche 1 unified rendering kind under `chart.type`) |
+| `table` | `table` | Raw `{columns, rows}` for HTML / pandas (set `chart.type: "table"` — The legacy `visualization_mode` field is retired; `chart.type` is the single render-kind discriminator) |
 
 **Picking columns.** `to_echarts_option` uses `viz.mapping.x`, `viz.mapping.y`, and `viz.mapping.series` to decide which columns become which axes. If `mapping` is empty it falls back to "first non-numeric column → X, first numeric column → Y" — so you can omit `mapping` for simple bar / line charts.
 
@@ -640,7 +640,7 @@ Every field a visualization spec can carry. Only `title`, `source.kind`, `source
 | `title` | string | (required) | Display title |
 | `description` | string \| null | `null` | Free-form description shown in list views and detail panes |
 | `source` | object | (required) | Data source — see [`source.*`](#source-fields) |
-| `chart.type` | enum | (required) | `bar`, `horizontalBar`, `line`, `area`, `scatter`, `pie`, `heatmap`, `metric`, `gauge`, `table`. Tranche 1 unified rendering kind under `chart.type` (the legacy `visualization_mode` field is retired). Use `"table"` for raw-rows display, `"metric"` / `"gauge"` for single-value display. |
+| `chart.type` | enum | (required) | `bar`, `horizontalBar`, `line`, `area`, `scatter`, `pie`, `heatmap`, `metric`, `gauge`, `table`. The legacy `visualization_mode` field is retired; `chart.type` is the single render-kind discriminator. Use `"table"` for raw-rows display, `"metric"` / `"gauge"` for single-value display. |
 | `mapping` | object | `{x: null, y: [], series: null}` | See [`mapping.*`](#mapping-fields). **In Builder mode, drives SQL generation.** |
 | `aggregation_type` | enum \| null | `null` | `count`, `sum`, `avg`, `none`. **Used in Builder mode** to pick the aggregation function. See [Aggregation cheat sheet](#aggregation-cheat-sheet). |
 | `options` | object | all `null` | Chart-specific options — see [`options.*`](#options-fields) |
@@ -680,7 +680,7 @@ When `source.kind == "sql"`:
 |-------|------|---------|--------|
 | `mapping.x` | `{column, bucket?}` \| string \| null | `null` | The X-axis dimension. Canonical wire shape is the **object form** `{column: "ts", bucket?: "month"}`. Bare-string form `"x": "ts"` is accepted on input and migrated to the object form on read. Falls back to "first non-numeric column" when `null`. **Optional for `chart.type` `metric` / `gauge`** — gateway emits `SELECT <agg> FROM <table>` and ignores the axis. |
 | `mapping.y` | string[] | `[]` | Raw response-column reference(s). Semantics depend on `chart.type`: <ul><li>`scatter` — `y[0]` is the y-axis column (no aggregation).</li><li>`table` — list of columns to SELECT (empty → `SELECT *`).</li><li>`bar` / `line` / `area` / `pie` / `heatmap` / `metric` / `gauge` — **ignored**. The y axis comes from `source.sql.metrics[]` for these chart types; setting `mapping.y` triggers a `mapping_y_ignored_for_aggregating_chart` warning.</li></ul> |
-| `mapping.series` | string \| null | `null` | Splits data by a second categorical column. **Semantics depend on `chart.type`** — see table below. **Required for `heatmap`**; ignored for `pie` / `scatter` / `metric` / `gauge` / `table`. Renamed from `series_split_by` in Tranche 4 to align with industry vocabulary (Evidence, ECharts, Superset). The old name is accepted on input for back-compat. |
+| `mapping.series` | string \| null | `null` | Splits data by a second categorical column. **Semantics depend on `chart.type`** — see table below. **Required for `heatmap`**; ignored for `pie` / `scatter` / `metric` / `gauge` / `table`. Renamed from `series_split_by` to align with industry vocabulary (Evidence, ECharts, Superset). The old name is accepted on input for back-compat. |
 | `mapping.x.bucket` | string \| null | `null` | Time-truncation granularity nested inside `mapping.x`. One of `minute` / `hour` / `day` / `week` / `month` / `quarter` / `year`. Gateway emits dialect-specific truncation: `DATE_TRUNC` (ANSI / CoreDB / Postgres / Snowflake), `TIMESTAMP_TRUNC` (BigQuery), per-granularity `DATE_FORMAT` / `DATE` / `MAKEDATE` (MySQL). Oracle returns a 400 — bake the truncation into `raw_query` for now. The legacy sibling form `mapping.x_bucket` is accepted on input and folded into `mapping.x.bucket` on read. |
 | `mapping.top` | integer \| null | `null` | Top-N filter on `mapping.x`. Pair with `other_bucket: true` to roll non-top values into an `'Other'` bucket. Mutually exclusive with `mapping.x.bucket`. Without `other_bucket: true`, equivalent to `sql.limit + sql.order_by` (and the gateway warns). See [Top-N + Other rollup](#top-n--other-rollup). |
 | `mapping.other_bucket` | boolean \| null | `null` | Include a literal `'Other'` rollup row catching everything outside the top-N. Only meaningful when `mapping.top` is also set. |

@@ -6,7 +6,7 @@ hand-author each query. This example covers the same shape using **Builder
 mode** — set ``mapping.x`` and either ``aggregation_type`` (shorthand) or
 ``source.sql.metrics[0]`` (explicit) and let the gateway generate the SQL.
 ``mapping.y`` is left empty for aggregating chart types; the metric column
-lives in ``metrics[].column`` (Tranche 2).
+lives in ``metrics[].column``.
 
 Also demos the ``filters=`` kwarg added in 0.6.0:
 - ``execute_visualization(viz_id, filters=[...])`` — runtime filter chips

@@ -84,7 +84,7 @@ def fine_tuned_bar(dataset: str) -> dict:
         # `mapping` entirely. When you have multiple numeric columns or want
         # to control which is which, set it explicitly:
         "mapping": {
-            # Object form (Tranche 4): `{column, bucket?}`. Bare-string
+            # Object form: `{column, bucket?}`. Bare-string
             # form is still accepted as input and migrated server-side.
             "x": {"column": "Feature"},
             # Raw-SQL mode: list the response column(s) you want bound
@@ -93,8 +93,8 @@ def fine_tuned_bar(dataset: str) -> dict:
             "y": ["Denials"],
             "series": None,    # only used for heatmap / multi-series
         },
-        # Tranche 1 unified rendering kind under `chart.type` (the
-        # legacy `visualization_mode` field is retired). Use
+        # The legacy `visualization_mode` field is retired; `chart.type`
+        # is the single render-kind discriminator. Use
         # `chart.type: "table"` for raw rows, `"metric"` / `"gauge"`
         # for single-value display.
         "options": {
@@ -170,7 +170,7 @@ def fine_tuned_metric(dataset: str) -> dict:
             },
         },
         "chart": {"type": "metric"},
-        # `chart.type: "metric"` is sufficient — Tranche 1 retired the
+        # `chart.type: "metric"` is sufficient —  retired the
         # legacy `visualization_mode` field; the metric renderer is
         # selected by `chart.type` alone.
         "options": {

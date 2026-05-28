@@ -5,82 +5,92 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — Tranche 4S: stop wiping `mapping.y` + synthesizing phantom metrics
+## [Unreleased]
 
-### Fixed (runtime contract enforcement)
+### Schema cleanup — canonical visualization shape
 
-- **`mapping.y` is now preserved verbatim** on aggregating chart types.
-  The previous create/update migration silently wiped `mapping.y` to
-  `[]` for any aggregating chart, then synthesized a phantom
-  `metrics[0]` entry from the wiped column. Three problems with the old
-  behavior:
-  - **Destroyed consumer input** without surfacing the documented
-    `mapping_y_ignored_for_aggregating_chart` warning (the warning
-    fires only when `mapping.y` is non-empty at execute time, so the
-    wipe silenced it).
-  - **Invented data the consumer never sent** — stored configs diverged
-    from POST bodies. Anyone fetching the viz to edit would see SQL
-    they didn't author.
-  - **Broke raw-mode multi-Y** — `mapping.y: ["avg_l", "max_l"]` on a
-    `raw_query` bar chart got wiped to `[]`, killing the multi-series
-    binding expansion that the docs promise.
-- **Phantom `metrics[0]` synthesis removed.** Stored configs now
-  faithfully reflect the request body. If `mapping.y` is set on an
-  aggregating chart, the rewriter emits the documented warning at
-  execute time; the field is not destructively rewritten.
+Cleans up the visualization spec so every chart-level concept has one
+canonical home. Aligns vocabulary with conventions used in SDK-first
+analytics tools (Evidence, ECharts, Cube.dev, Superset). Existing
+payloads continue to work; the gateway migrates legacy field shapes on
+every read.
 
-### Behavior change for existing legacy vizzes
-
-A small number of stored vizzes from before Tranche 2 may have had
-`mapping.y[0]` as the metric column with empty `metrics[]`. With the
-phantom-synthesis path removed, these will now emit `COUNT(*)` at
-execute time and surface `mapping_y_ignored_for_aggregating_chart`
-warning rather than silently being rewritten. Resave via the UI (which
-emits canonical `metrics[].column`) to restore the intended aggregation.
-
-## [Unreleased] — Tranche 4: chart-config vocabulary cleanup
-
-Aligns the visualization schema with industry conventions for SDK-first
-analytics tools (Evidence, ECharts, Cube.dev, Superset). Two renames; the
-gateway migrates legacy payloads on read so existing saved visualisations
-keep working without caller changes.
-
-### Changed (visualization schema — back-compat reads, canonical writes)
-- **`mapping.series_split_by` → `mapping.series`.** Aligns with Evidence,
-  ECharts, Superset (`series_columns`), and ggplot's `color` channel
-  concept. The old name is accepted on input and migrated; the response
-  `metadata.binding` now publishes `series` instead of `series_split_by`.
+- **`mapping.series_split_by` → `mapping.series`.** Aligns with
+  Evidence, ECharts, Superset (`series_columns`), and ggplot's `color`
+  channel concept. The old name is accepted on input and migrated; the
+  response `metadata.binding` now publishes `series` instead of
+  `series_split_by`.
 - **`mapping.x: "col"` + `mapping.x_bucket: "month"` →
-  `mapping.x: {column: "col", bucket: "month"}`.** Nests the
+  `mapping.x: {column: "col", bucket: "month"}`.** Nests
   time-truncation granularity inside the X-dimension where Vega-Lite,
   ThoughtSpot, and LookML put it. The bare-string form and the legacy
   sibling field are both accepted on input and folded into the object
-  form by `apply_visualization_defaults`. `mapping.top` and
-  `mapping.other_bucket` stay as siblings (Metabase / Superset
-  convention — query-shape concerns rather than per-column properties).
+  form on read. `mapping.top` and `mapping.other_bucket` stay as
+  siblings (Metabase / Superset convention — query-shape concerns
+  rather than per-column properties).
 
-### Changed (warning codes)
+### Fixed — runtime contract enforcement
+
+- **`mapping.y` is preserved verbatim** on aggregating chart types.
+  The previous create/update path silently wiped `mapping.y` to `[]`
+  for any aggregating chart, then synthesized a phantom `metrics[0]`
+  entry from the wiped column. That destroyed consumer input,
+  suppressed the documented `mapping_y_ignored_for_aggregating_chart`
+  warning, broke raw-mode multi-Y, and stored configs that diverged
+  from POST bodies. Now `mapping.y` round-trips intact; the warning
+  fires at execute time when set on a chart type that ignores it.
+- **No phantom `metrics[0]` synthesis.** Stored configs faithfully
+  reflect the request body. If `mapping.y` is set on an aggregating
+  chart, the rewriter emits the documented warning at execute time
+  rather than destructively rewriting.
+- **Multi-Y `binding.y` expansion in raw-query mode.** For
+  `bar` / `horizontalBar` / `line` / `area` charts with
+  `source.sql.raw_query` set, the response's `binding.y` now lists
+  every `mapping.y` entry that matches a real response column — so
+  hand-written multi-aggregation SQL (e.g.
+  `SELECT x, AVG(y) AS avg_y, MAX(y) AS max_y`) renders as multi-series
+  without manual binding work.
+
+### Changed — warning codes
+
 - `missing_series_split_by_for_heatmap` → `missing_series_for_heatmap`.
 - `top_n_other_bucket_incompatible_with_x_bucket` →
   `top_n_other_bucket_incompatible_with_bucket`.
+- `raw_query_overrides_builder_fields` — narrowed trigger and clearer
+  message. Previously fired whenever any `mapping.*` field was set
+  alongside `raw_query`. Now fires only when truly-ignored fields are
+  populated (`source.sql.metrics`, `source.sql.order_by`,
+  `mapping.x.bucket`, `mapping.top`, `mapping.other_bucket`). The
+  message explicitly calls out that `mapping.x` / `mapping.y` /
+  `mapping.series` are still honoured for binding derivation.
 - Warning *messages* throughout the rewriter reference the new field
   paths (`mapping.x.bucket`, `mapping.series`).
 
 ### Migration
 
-No caller action required. Existing payloads round-trip through the
-gateway's `apply_visualization_defaults` pass which:
+The gateway's read-time normalization runs on every GET / LIST /
+execute so existing stored visualisations keep working without caller
+changes:
+
 - renames `mapping.series_split_by` → `mapping.series` (only when
   `mapping.series` is unset);
 - collapses `mapping.x: "col"` + sibling `mapping.x_bucket: "g"` into
   `mapping.x: {column: "col", bucket: "g"}`;
-- preserves an already-set `mapping.series` / `mapping.x.bucket` on the
-  inbound payload.
+- preserves an already-set `mapping.series` / `mapping.x.bucket` on
+  the inbound payload.
 
 The legacy keys are still accepted on input indefinitely (the migration
-is idempotent). New SDK examples and the dashboards.md docs use the
-canonical Tranche-4 shape; old code that still emits the legacy names
-continues to work.
+is idempotent). New SDK examples and `docs/dashboards.md` use the
+canonical shape; code that still emits the legacy names continues to
+work.
+
+A small number of stored visualizations from before `mapping.y` was
+scoped to scatter / table may have had `mapping.y[0]` as the metric
+column with empty `metrics[]`. With the phantom-synthesis path removed,
+these will now emit `COUNT(*)` at execute time and surface
+`mapping_y_ignored_for_aggregating_chart` warning. Resave via the UI
+(which emits canonical `metrics[].column`) to restore the intended
+aggregation.
 
 ## [0.6.0] - 2026-05-25
 
@@ -115,7 +125,7 @@ continues to work.
 
 ### Added (gateway-side, transparent to existing callers)
 - `metadata.binding` — every successful `execute_visualization` response
-  now carries `{x, y[], series_split_by, value}` under `metadata.binding`.
+  now carries `{x, y[], series, value}` under `metadata.binding`.
   This is the single source of truth for any consumer rendering a chart
   from the response: read `binding.x` / `binding.y[0]` / `binding.value`
   to find the response column, instead of resolving the metric's SQL
@@ -159,32 +169,31 @@ continues to work.
   types (`VARCHAR(255)`, `INT(11)`, `DOUBLE PRECISION`). Previously these
   all fell to `"string"` in response metadata, silently breaking chart
   rendering for numeric columns.
-- `mapping.x_bucket` — Builder-mode time bucketing. Set to one of
-  `minute` / `hour` / `day` / `week` / `month` / `quarter` / `year` and
-  the gateway emits dialect-specific truncation: `DATE_TRUNC` for ANSI /
+- `mapping.x.bucket` — Builder-mode time bucketing nested inside
+  `mapping.x` (`{column, bucket}`). Set `bucket` to one of `minute` /
+  `hour` / `day` / `week` / `month` / `quarter` / `year` and the
+  gateway emits dialect-specific truncation: `DATE_TRUNC` for ANSI /
   CoreDB / Postgres / Snowflake, `TIMESTAMP_TRUNC` for BigQuery, and
   per-granularity `DATE_FORMAT` / `DATE` / `MAKEDATE` for MySQL (no
   `DATE_TRUNC` exists there). Applies to SELECT, GROUP BY, and ORDER BY
   uniformly. ISO 8601 Monday-start week boundary across all engines.
   Oracle returns a 400 with a workaround hint until per-engine support
-  lands.
+  lands. The legacy sibling form `mapping.x_bucket` is accepted on
+  input and folded into `mapping.x.bucket` on read.
 - Response `metadata.warnings[]` — list of `{code, message}` advisories
   for silent-fail Builder configs: missing `mapping.x` for a chart type,
-  `heatmap` without `series_split_by`, `mapping.y` set with COUNT
-  aggregation, `raw_query` colliding with Builder fields, unrecognized
+  `heatmap` without `mapping.series`, `mapping.y` set on an aggregating
+  chart, `raw_query` colliding with Builder fields, unrecognized
   `connector_id`, unknown `order_by[].function`, unresolved
-  `order_by[].metric_id`, plus `sql.dimensions[]` silent-drop codes
-  (`x_bucket_conflicts_with_date_interval`,
-  `dimension_date_interval_ignored`,
-  `dimension_custom_expression_ignored`,
-  `top_n_other_bucket_unsupported_on_non_x`,
-  `top_n_without_other_bucket_use_limit`,
-  `top_n_other_bucket_incompatible_with_x_bucket`,
-  `top_n_zero_ignored`), plus consumer-facing config drift codes
+  `order_by[].metric_id`, plus consumer-facing config drift codes
   (`unknown_aggregation_function`, `multi_metric_truncated`,
   `multi_y_truncated`, `order_by_column_unrecognized`,
-  `high_cardinality_no_top_n`). Warnings are advisory — the query still
-  runs. See [Builder-mode warnings](docs/dashboards.md#builder-mode-warnings).
+  `high_cardinality_no_top_n`,
+  `top_n_other_bucket_incompatible_with_bucket`,
+  `top_n_zero_ignored`,
+  `top_n_without_other_bucket_use_limit`). Warnings are advisory — the
+  query still runs. See
+  [Builder-mode warnings](docs/dashboards.md#builder-mode-warnings).
 - Runtime `filters[]` now tolerate missing `id` and missing `value` for
   `exists` / `does_not_exist`. Server auto-stamps a fresh uuid for any
   filter without an `id` (dedupe is keyed by `field`, not `id`), and the
@@ -193,25 +202,6 @@ continues to work.
 - `mapping.x` and `mapping.y` are optional for `chart.type` `metric` and
   `gauge`. The gateway emits `SELECT <agg> FROM <table>` and ignores the
   axes; previously the schema rejected payloads that omitted them.
-- `sql.dimensions[].date_interval` is now honoured as a fallback for
-  `mapping.x_bucket`. When the dimension's `column` matches `mapping.x`
-  and `mapping.x_bucket` is unset, the granularity (`"day"` / `"hour"` /
-  etc.) drives the same dialect-specific `DATE_TRUNC` / `TIMESTAMP_TRUNC`
-  / `DATE_FORMAT` rewrite. `mapping.x_bucket` wins on conflict and emits
-  `x_bucket_conflicts_with_date_interval`.
-- `sql.dimensions[].top` + `other_bucket: true` on the X dimension now
-  triggers a CASE-rewrite that aggregates non-top values into a literal
-  `'Other'` bucket. See [Top-N + Other rollup](docs/dashboards.md#top-n--other-rollup).
-  Mutually exclusive with `mapping.x_bucket`; `top` without
-  `other_bucket: true` is the same as vanilla top-N from
-  `sql.order_by + sql.limit` and emits a warning pointing at those
-  fields.
-- Silent-drop coverage for `sql.dimensions[]` extended with three new
-  advisory codes: `dimension_date_interval_ignored` (interval set on a
-  non-X column), `dimension_custom_expression_ignored` (custom SQL
-  expression — switch to `raw_query`), and
-  `top_n_other_bucket_unsupported_on_non_x` (rollup requested on a
-  non-X dimension).
 - Row-mode column types (raw `SELECT a, b` against local CoreDB indexes)
   now report `number` / `boolean` correctly even when CoreDB hands the
   gateway `data_type: "String"`. Gateway sniffs sampled row values for
@@ -242,8 +232,9 @@ continues to work.
   <ul>
   <li>`sql.dimensions[].top` → `mapping.top`</li>
   <li>`sql.dimensions[].other_bucket` → `mapping.other_bucket`</li>
-  <li>`sql.dimensions[].date_interval` → `mapping.x_bucket` (already had
-      this alias; now the canonical home)</li>
+  <li>`sql.dimensions[].date_interval` → `mapping.x.bucket` (nested
+      inside the X-dimension; was previously the sibling
+      `mapping.x_bucket`, both accepted on input)</li>
   </ul>
   Gateway migrates legacy payloads on read — the X-dimension entry's
   fields move into `mapping`, then `sql.dimensions[]` is cleared. New
@@ -258,12 +249,9 @@ continues to work.
   <ul>
   <li>`scatter`: `mapping.y[0]` is the raw y-axis column (no aggregation).</li>
   <li>`table`: `mapping.y` is the SELECT column list (empty → `SELECT *`).</li>
-  <li>everything else (bar / line / area / pie / heatmap / metric / gauge): `mapping.y` is **ignored**. The y axis comes from `metrics[]` only.</li>
+  <li>everything else (bar / line / area / pie / heatmap / metric / gauge): `mapping.y` is **ignored** for SQL emission. The y axis comes from `metrics[]` only. `mapping.y` is still preserved on the stored config and used for `metadata.binding` derivation in raw-query mode.</li>
   </ul>
-  Saved aggregating-chart vizzes that had `mapping.y[0]` set are migrated
-  on read — the column is back-filled into `metrics[0]` (function from
-  `aggregationType`, defaulting to `sum`) and `mapping.y` is cleared.
-  Setting `mapping.y` on an aggregating chart now emits the
+  Setting `mapping.y` on an aggregating chart emits the
   `mapping_y_ignored_for_aggregating_chart` warning. The old
   `y_axis_unused_with_count_aggregation` warning is replaced with
   `metric_column_unused_with_count_aggregation` which reads from
@@ -272,10 +260,6 @@ continues to work.
   `metric_id` form. The alias-by-column form (`column: "sum_revenue"`)
   still works but is now documented as the legacy idiom — it leaks the
   generator's alias formula into the payload.
-- **`mapping.series_split_by` semantics clarified.** The field's role
-  depends on `chart.type` (pivot for bar/line/area; second categorical
-  axis for heatmap; ignored for pie/scatter/metric/gauge/table). Docs
-  now spell this out per chart type.
 
 ### Fixed
 - **`metrics[].function` validation** — `function` was previously
@@ -284,13 +268,13 @@ continues to work.
   return garbage rows with no error. Now validated against the
   allow-list `{count, sum, avg, min, max, none}`; unknown values emit
   `unknown_aggregation_function` and fall back to `count`.
-- **Time-bucketed columns now carry an `AS` alias** — `mapping.x_bucket`
+- **Time-bucketed columns now carry an `AS` alias** — `mapping.x.bucket`
   used to emit a bare `DATE_TRUNC(...)` / `TIMESTAMP_TRUNC(...)`
   expression, so the response column name fell back to dialect defaults
   (`f0_` on BigQuery, the literal expression string on native CoreDB).
   Renderers couldn't bind to the column. Now the SELECT clause wraps the
   expression with `AS "<x_axis>"` so the response column name matches
-  `mapping.x` regardless of bucketing.
+  `mapping.x.column` regardless of bucketing.
 - **`contains` filter operator** — previously documented but rejected
   at execute time with `unsupported operator: contains`. Now implemented
   using dialect-safe `LIKE '%value%'` with `%`, `_`, `\`, and `'`
