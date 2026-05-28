@@ -656,7 +656,7 @@ viz = sdk.create_visualization({
         # no raw_query — gateway generates it from the fields below
     },
     "chart": {"type": "bar"},
-    "mapping": {"x": "currency", "y": ["count"], "series_split_by": None},
+    "mapping": {"x": {"column": "currency"}, "y": ["count"], "series": None},
     "aggregation_type": "count",   # count | sum | avg | none
 })
 ```
@@ -683,7 +683,7 @@ viz = sdk.create_visualization({
         },
     },
     "chart": {"type": "bar"},
-    "mapping": {"x": "customer_name", "y": ["revenue"]},
+    "mapping": {"x": {"column": "customer_name"}, "y": []},
 })
 # Emits: SELECT `customer_name`, SUM(`revenue`) as `sum_revenue`
 #        FROM `orders` GROUP BY `customer_name`

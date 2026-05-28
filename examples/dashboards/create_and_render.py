@@ -70,7 +70,6 @@ def _flexlm_viz_specs(dataset: str, mapping_dataset: str) -> list[dict]:
                 },
             },
             "chart": {"type": "metric"},
-            "visualization_mode": "table",
             "_layout_hint": {"x": 0, "y": 0, "w": 12, "h": 8},
         },
         # 2. Top denied features — vertical bar.
@@ -139,9 +138,9 @@ def _flexlm_viz_specs(dataset: str, mapping_dataset: str) -> list[dict]:
             },
             "chart": {"type": "heatmap"},
             "mapping": {
-                "x": "Hour of day (UTC)",
+                "x": {"column": "Hour of day (UTC)"},
                 "y": ["Denials"],
-                "series_split_by": "Feature",
+                "series": "Feature",
             },
             "_layout_hint": {"x": 0, "y": 16, "w": 30, "h": 18},
         },

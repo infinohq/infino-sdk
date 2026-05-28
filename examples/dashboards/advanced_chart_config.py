@@ -84,15 +84,19 @@ def fine_tuned_bar(dataset: str) -> dict:
         # `mapping` entirely. When you have multiple numeric columns or want
         # to control which is which, set it explicitly:
         "mapping": {
-            "x": "Feature",
+            # Object form (Tranche 4): `{column, bucket?}`. Bare-string
+            # form is still accepted as input and migrated server-side.
+            "x": {"column": "Feature"},
+            # Raw-SQL mode: list the response column(s) you want bound
+            # to the chart's y-axis. The renderer reads
+            # `metadata.binding` (gateway-computed) to resolve columns.
             "y": ["Denials"],
-            "series_split_by": None,    # only used for heatmap / multi-series
+            "series": None,    # only used for heatmap / multi-series
         },
-        # `visualization_mode` overrides the default chart rendering:
-        #   "chart"  (default) — render as the declared chart.type
-        #   "table"            — render raw {columns, rows}
-        #   "metric"           — pull a scalar from rows[0]
-        "visualization_mode": "chart",
+        # Tranche 1 unified rendering kind under `chart.type` (the
+        # legacy `visualization_mode` field is retired). Use
+        # `chart.type: "table"` for raw rows, `"metric"` / `"gauge"`
+        # for single-value display.
         "options": {
             # Where the legend sits. `null` (default) hides it.
             "legend": {"show": True, "position": "right"},
@@ -132,9 +136,9 @@ def fine_tuned_donut(dataset: str, mapping_dataset: str) -> dict:
         },
         "chart": {"type": "pie"},
         "mapping": {
-            "x": "Stage",            # the slice category
-            "y": ["Denials"],        # the slice value
-            "series_split_by": None,
+            "x": {"column": "Stage"},   # the slice category
+            "y": ["Denials"],           # the slice value (raw-SQL mode)
+            "series": None,
         },
         "options": {
             # 0.0 = solid pie, > 0.0 = donut hole.  0.5 = half-donut.
@@ -166,8 +170,9 @@ def fine_tuned_metric(dataset: str) -> dict:
             },
         },
         "chart": {"type": "metric"},
-        # Required for metric rendering — pulls the scalar from rows[0].
-        "visualization_mode": "table",
+        # `chart.type: "metric"` is sufficient — Tranche 1 retired the
+        # legacy `visualization_mode` field; the metric renderer is
+        # selected by `chart.type` alone.
         "options": {
             "metric_formatting": {
                 "prefix": "$",                # rendered before the value

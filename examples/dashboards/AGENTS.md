@@ -23,8 +23,8 @@ Read this first. For long-form prose, see [`docs/dashboards.md`](../../docs/dash
 | "Make a dashboard with these charts" | `sdk.create_dashboard({"title", "panels": [{"viz_id": ...}]})` |
 | "Render the whole dashboard" | `sdk.execute_dashboard(dashboard_id)` — **not** a loop of `execute_visualization` |
 | "Add one panel to dashboard D" | Fetch with `get_dashboard`, append to `panels`, send full list back via `update_dashboard` |
-| "Show a single number (total / count)" | `chart.type: "metric"` + `visualization_mode: "table"` |
-| "Show raw rows in a table" | `visualization_mode: "table"` |
+| "Show a single number (total / count)" | `chart.type: "metric"` (or `"gauge"`) — Tranche 1 unified rendering kind under `chart.type` |
+| "Show raw rows in a table" | `chart.type: "table"` |
 
 ## Chart skeletons
 
@@ -73,11 +73,15 @@ sdk.create_visualization({
         "sql": {"raw_query": "SELECT EXTRACT(HOUR FROM `@timestamp`) AS hour, feature, COUNT(*) AS denials FROM license_events WHERE event_type='DENIED' GROUP BY EXTRACT(HOUR FROM `@timestamp`), feature LIMIT 200"},
     },
     "chart": {"type": "heatmap"},
-    "mapping": {"x": "hour", "y": ["denials"], "series_split_by": "feature"},  # REQUIRED for heatmap
+    # mapping.x: object form `{column, bucket?}` (Tranche 4). Bare-string
+    # still accepted as input; server migrates on read.
+    # mapping.series: the second categorical axis (renamed from
+    # `series_split_by` in Tranche 4 to align with Evidence / ECharts / Superset).
+    "mapping": {"x": {"column": "hour"}, "y": ["denials"], "series": "feature"},  # REQUIRED for heatmap
 })
 ```
 
-Heatmaps need three columns and `mapping.series_split_by` set — the fallback picker can't infer it.
+Heatmaps need three columns and `mapping.series` set — the fallback picker can't infer it.
 
 ### Metric (single number KPI)
 
@@ -89,8 +93,8 @@ sdk.create_visualization({
         "index": "license_events",
         "sql": {"raw_query": "SELECT COUNT(*) AS denials FROM license_events WHERE event_type='DENIED'"},
     },
-    "chart": {"type": "metric"},
-    "visualization_mode": "table",   # REQUIRED for metric — pulls the scalar from the row
+    "chart": {"type": "metric"},   # Tranche 1: `chart.type: "metric"` is sufficient
+                                    # (the legacy `visualization_mode` field is retired).
     "options": {
         "metric_formatting": {"thousands_separator": ",", "decimals": 0},
     },
@@ -109,8 +113,11 @@ sdk.create_visualization({
         "index": "license_events",
         "sql": {"raw_query": "SELECT `@timestamp`, feature, user_name FROM license_events WHERE event_type='DENIED' ORDER BY `@timestamp` DESC LIMIT 100"},
     },
-    "chart": {"type": "bar"},          # ignored when mode == "table"
-    "visualization_mode": "table",
+    # Tranche 1: `chart.type: "table"` is now first-class — no separate
+    # `visualization_mode` field. `mapping.y` is the SELECT column list
+    # for table mode (empty = SELECT *).
+    "chart": {"type": "table"},
+    "mapping": {"y": ["@timestamp", "feature", "user_name"]},
 })
 ```
 
@@ -150,11 +157,11 @@ Omit `layout` on every panel and the server auto-flows into a 2-column grid.
 ## Decision rules
 
 - **Mapping**: omit `mapping` if SQL returns exactly two columns (one non-numeric for X, one numeric for Y). Set it explicitly for heatmap, multi-series line, or when SQL has multiple numeric columns and you need to pick.
-- **`visualization_mode`**:
-  - `"table"` for raw row listings (regardless of `chart.type`)
-  - `"table"` is also required when `chart.type == "metric"` (the metric pulls a scalar from row 0)
-  - `"chart"` (default) for normal charts
-- **Single-number KPI**: always `chart.type: "metric"` + `visualization_mode: "table"`. SQL must return one row with one numeric column.
+- **`chart.type` selects the renderer** (Tranche 1 — no separate `visualization_mode` field):
+  - `"bar"` / `"horizontalBar"` / `"line"` / `"area"` / `"pie"` / `"heatmap"` / `"scatter"` → ECharts rendering
+  - `"metric"` / `"gauge"` → single-value display (uses `data["rows"][0]`)
+  - `"table"` → raw `{columns, rows}` for HTML / pandas; `mapping.y` is the SELECT column list (empty = SELECT *)
+- **Single-number KPI**: `chart.type: "metric"`. SQL must return one row with one numeric column.
 - **Bar vs. horizontalBar**: use `horizontalBar` when category labels are long (feature names, full paths, etc.) so they stay readable.
 - **`LIMIT`**: put it in `raw_query`. The server-default `source.sql.limit` is a cap, not a hint; it's ignored if `raw_query` already has `LIMIT`.
 - **Time filtering**: bake time clauses into `raw_query` (e.g. `WHERE \`@timestamp\` > NOW() - INTERVAL 1 DAY`). Runtime time-range overrides aren't wired through yet.
@@ -164,7 +171,7 @@ Omit `layout` on every panel and the server auto-flows into a 2-column grid.
 - **Don't loop `execute_visualization` over a dashboard's panels.** Use `execute_dashboard(dashboard_id)` — one call, parallel fan-out. A 16-panel loop is ~33 sequential HTTP calls instead of one.
 - **Don't expect `update_*` to merge lists.** PATCH replaces lists wholesale. To add a panel: fetch current `panels`, append, send the full updated list back. Same for `tags`.
 - **Don't try to update `id`, `schema_version`, `created_at`, or `created_by`.** The server silently ignores writes to these.
-- **Don't set `chart.type: "metric"` without `visualization_mode: "table"`.** The metric renderer reads from `data["rows"][0]`; without table mode the dispatch goes to chart-rendering instead.
+- **Don't put the aggregating-chart metric column in `mapping.y`.** For aggregating charts (bar / line / area / pie / heatmap / metric / gauge), put the metric column in `source.sql.metrics[0].column` (or use `aggregation_type` shorthand). `mapping.y` set on these chart types is preserved but ignored for SQL emission; the gateway emits `mapping_y_ignored_for_aggregating_chart` warning at execute time. (Tranche 4S corrected this — previously the gateway silently rewrote your input.)
 - **Don't name SQL columns with characters that need re-quoting** — keep `AS` aliases simple (`feature`, `denials`, `hour`), match them in `mapping.x` / `mapping.y` verbatim.
 - **Don't assume `mapping.x` and `mapping.y` are auto-set from SQL `AS` aliases.** They are NOT — the fallback uses column *position + type*, not names. If you need control, set `mapping` explicitly.
 - **Don't catch a panel error and continue silently.** `execute_dashboard` puts errors in `panel["error"]` so the dashboard can ship partially-broken. Render an error placeholder at the panel's layout slot; don't skip it (the layout collapses).
@@ -191,9 +198,9 @@ If you don't know which dataset to query, list them first: `sdk.get_datasets()`.
 title                 str           required
 description           str | null    null
 source                object        required (see below)
-chart.type            enum          required (bar|horizontalBar|line|area|scatter|pie|heatmap|metric|gauge)
-visualization_mode    enum          "chart"  (or "table" / "metric")
-mapping               object        {x:null, y:[], series_split_by:null}
+chart.type            enum          required (bar|horizontalBar|line|area|scatter|pie|heatmap|metric|gauge|table)
+                                     `"table"` is first-class (Tranche 1; no separate `visualization_mode`).
+mapping               object        {x:null, y:[], series:null}
 options               object        all-null (see below)
 filters               array         []         SAVED but not yet applied at execute time
 time_range            obj | null    null       SAVED but not yet applied at execute time
@@ -212,9 +219,20 @@ source.connector_id     str | null                       for connector-backed so
 source.sql.raw_query    str                              required when kind=="sql"
 source.sql.limit        int        50                    cap applied if raw_query has no LIMIT
 source.sql.offset       int        0                     paginated execution
-source.sql.dimensions   array      []                    reserved for builder mode — leave empty
-source.sql.metrics      array      []                    reserved for builder mode
-source.sql.order_by     array      []                    reserved for builder mode
+source.sql.dimensions   array      []                    DEPRECATED (Tranche 3 retired this).
+                                                          Chart-level concepts moved to mapping:
+                                                          `top`/`other_bucket`/`date_interval`
+                                                          → `mapping.top`/`mapping.other_bucket`/`mapping.x.bucket`.
+                                                          New payloads should omit or send `[]`.
+source.sql.metrics      array      []                    Builder-mode aggregation.
+                                                          [{id, function, column, alias?, custom_expression?}].
+                                                          function ∈ {count, sum, avg, min, max, none}.
+                                                          Aggregating charts read metrics[0] for SQL emission;
+                                                          mapping.y is ignored for them (Tranche 2).
+source.sql.order_by     array      []                    Builder-mode ORDER BY.
+                                                          [{column, direction}] — `column` may be a raw
+                                                          dataset column OR a server-generated metric alias
+                                                          (e.g. "sum_revenue", "count").
 ```
 
 ### `options.*` (chart-type dependent)
@@ -234,9 +252,32 @@ options.metric_formatting.abbreviate           bool      "184K" instead of "184,
 ### `mapping.*`
 
 ```text
-mapping.x                str | null    fallback: first non-numeric column
-mapping.y                str[]         fallback: first numeric column
-mapping.series_split_by  str | null    REQUIRED for heatmap (cannot be inferred)
+mapping.x                {column, bucket?} | str | null
+                                       Tranche 4: canonical wire shape is the object
+                                       form `{column: "ts", bucket?: "month"}`. Bare
+                                       string accepted as input; server migrates on
+                                       read. Bucket folds time-truncation
+                                       granularity into the dimension (was the
+                                       sibling `mapping.x_bucket` field, now nested).
+                                       Fallback: first non-numeric column.
+mapping.y                str[]         Semantics depend on chart.type:
+                                       - scatter: y[0] is the y-axis column
+                                       - table:   the SELECT column list (empty = SELECT *)
+                                       - bar/line/area/pie/heatmap/metric/gauge:
+                                         IGNORED for SQL emission (use metrics[]
+                                         instead); emits `mapping_y_ignored_for_aggregating_chart`
+                                         warning. Still used for `metadata.binding`
+                                         derivation in raw_query mode.
+mapping.series           str | null    Splits data into one series per distinct value
+                                       (the "color" / "legend" dimension). REQUIRED
+                                       for heatmap. Renamed from `series_split_by`
+                                       in Tranche 4 to align with Evidence / ECharts /
+                                       Superset vocabulary.
+mapping.top              int | null    Top-N filter on mapping.x.
+mapping.other_bucket     bool          Pair with `top` to roll non-top values into
+                                       a literal 'Other' bucket (server emits CASE
+                                       expression). Mutually exclusive with
+                                       `mapping.x.bucket`.
 ```
 
 ### `filters[*]` (saved only; not yet applied)
@@ -245,8 +286,11 @@ mapping.series_split_by  str | null    REQUIRED for heatmap (cannot be inferred)
 filters[].id               str    required
 filters[].field            str    required — RAW identifier, no quoting (gateway handles dialect)
 filters[].operator         enum   is | is_not | is_one_of | is_not_one_of |
-                                  is_between | is_not_between | exists | does_not_exist
-filters[].value            any    operand (is_between takes [lo, hi] or {from, to})
+                                  is_between | is_not_between | exists | does_not_exist |
+                                  contains
+filters[].value            any    operand (is_between takes [lo, hi] or {from, to};
+                                  contains takes a scalar substring — % and _ escaped
+                                  server-side so the value matches literally)
 filters[].enabled          bool   true
 filters[].is_time_filter   bool   false
 filters[].query_type       enum   "sql" | "querydsl" | null

@@ -932,9 +932,17 @@ class InfinoSDK:
 
         Supported ``operator`` values: ``is``, ``is_not``, ``is_one_of``,
         ``is_not_one_of``, ``exists``, ``does_not_exist``, ``is_between``,
-        ``is_not_between``. For ``is_between`` time filters, ``value`` is
-        either ``[lo, hi]`` (numeric) or ``{"from": ..., "to": ...}`` (time
-        range, ISO-8601 strings or epoch-ms).
+        ``is_not_between``, ``contains``.
+
+        - ``is_between`` time filters: ``value`` is either ``[lo, hi]``
+          (numeric) or ``{"from": ..., "to": ...}`` (time range, ISO-8601
+          strings or epoch-ms).
+        - ``contains``: substring match emitted as ``LIKE '%value%'``.
+          ``value`` must be a scalar (string / number / bool); arrays and
+          ``null`` are rejected. Wildcards (``%``, ``_``) and quotes in the
+          value are escaped server-side so the substring matches literally.
+        - ``exists`` / ``does_not_exist``: ``value`` is ignored — you can
+          omit it.
 
         ``time_range`` (optional): convenience kwarg for the common case of
         bounding the viz to a single time window. Shape::
@@ -988,17 +996,18 @@ class InfinoSDK:
           ``area``, ``pie``, ``heatmap``, ``scatter``.
         - ``kind == "table"``: ``result["columns"]`` and ``result["rows"]``
           for inline HTML/pandas rendering. Returned when
-          ``visualization_mode == "table"`` or when the data doesn't fit the
-          declared chart type.
+          ``chart.type == "table"`` (Tranche 1 unified rendering kind
+          under ``chart.type``; the legacy ``visualization_mode`` field
+          is retired) or when the data doesn't fit the declared chart type.
         - ``kind == "metric"``: ``result["value"]`` is the single
           aggregated value, with optional ``result["formatting"]`` (prefix,
           suffix, decimals, abbreviate, thousands_separator). Returned when
-          ``visualization_mode == "metric"`` or
           ``chart.type == "metric" | "gauge"``.
 
-        The opinionated mapping uses ``viz.mapping.x``, ``viz.mapping.y``,
-        and ``viz.mapping.series_split_by`` to pick columns; if mapping is
-        empty it falls back to "first column = X, second = Y" semantics.
+        The opinionated mapping uses ``viz.mapping.x`` (``{column,
+        bucket?}`` post-Tranche 4), ``viz.mapping.y``, and
+        ``viz.mapping.series`` to pick columns; if mapping is empty it
+        falls back to "first column = X, second = Y" semantics.
         Styling (colors, fonts, tooltip formatters) is intentionally
         minimal — deep-merge your theme on top in your renderer.
 
@@ -1746,64 +1755,59 @@ def _sort_axis_values(values):
 def _to_echarts_option_impl(
     viz: Dict[str, Any], data: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Implementation of `InfinoSDK.to_echarts_option`. See docstring there."""
+    """Implementation of `InfinoSDK.to_echarts_option`. See docstring there.
+
+    Axis-to-column mapping is read **only** from ``data.metadata.binding`` —
+    the single contract every execute response publishes. The viz spec is
+    consulted for ``chart.type`` and presentational options (title,
+    formatting) but never for column resolution. This keeps the renderer
+    decoupled from the spec shape so it doesn't break as new source kinds
+    (DSL, PromQL) ship.
+    """
     # Accept either the full envelope ({id, kind, attributes: {...}}) or the
     # attributes dict directly.
     attrs = viz.get("attributes", viz) if isinstance(viz, dict) else {}
     title = attrs.get("title") or ""
     chart_type = (attrs.get("chart") or {}).get("type", "bar")
-    mode = attrs.get("visualization_mode") or "chart"
-    mapping = attrs.get("mapping") or {}
     formatting = (attrs.get("options") or {}).get("metric_formatting")
 
     columns = data.get("columns") or []
     rows = data.get("rows") or []
-    col_names = [c["name"] for c in columns]
+    metadata = data.get("metadata") or {}
+    binding = metadata.get("binding") or {}
 
-    # --- visualization_mode = "table" → return table shape ----------------
-    if mode == "table":
+    # Single source of truth for axis assignments. Tranche 4 renamed
+    # `series_split_by` → `series`; fall back to the legacy key so an
+    # older gateway response still renders.
+    x_col = binding.get("x")
+    y_cols: List[str] = list(binding.get("y") or [])
+    series_split = binding.get("series") or binding.get("series_split_by")
+    value_col = binding.get("value")
+
+    # --- chart.type "table" → return table shape -------------------------
+    if chart_type == "table":
         return {"kind": "table", "columns": columns, "rows": rows, "title": title}
 
-    # --- visualization_mode = "metric" OR chart.type ∈ {metric, gauge} -----
-    if mode == "metric" or chart_type in ("metric", "gauge"):
-        # Pick first numeric column from first row as the value.
+    # --- chart.type ∈ {metric, gauge} → single-value rendering -----------
+    if chart_type in ("metric", "gauge"):
         value = None
-        label = title
-        if rows and col_names:
-            value = rows[0].get(col_names[0])
+        if rows and value_col is not None:
+            value = rows[0].get(value_col)
+        elif rows and columns:
+            # Defensive fallback (raw_query with no binding) — first numeric.
+            for c in columns:
+                if c.get("type") == "number":
+                    value = rows[0].get(c["name"])
+                    break
         return {
             "kind": "metric",
             "title": title,
-            "label": label,
+            "label": title,
             "value": value,
             "formatting": formatting,
         }
 
-    # --- otherwise build a chart option for the declared chart_type --------
-    # When `mapping` is not populated by the viz, fall back to a type-aware
-    # heuristic: X = first non-numeric column (typically a dimension), Y =
-    # first numeric column (typically the metric). This avoids picking the
-    # wrong Y when a query has the shape (dimension, dimension, metric) —
-    # positional `cols[1]` would grab a string column. Customers can override
-    # by setting `mapping.x` / `mapping.y` explicitly on the viz.
-    types_by_name = {c["name"]: c.get("type") for c in columns}
-    non_numeric = [n for n in col_names if types_by_name.get(n) != "number"]
-    numeric = [n for n in col_names if types_by_name.get(n) == "number"]
-
-    x_col = mapping.get("x")
-    if not x_col:
-        x_col = non_numeric[0] if non_numeric else (col_names[0] if col_names else None)
-
-    y_cols = mapping.get("y") or []
-    if not y_cols:
-        candidate_y = [n for n in numeric if n != x_col]
-        if candidate_y:
-            y_cols = [candidate_y[0]]
-        elif len(col_names) > 1:
-            y_cols = [col_names[1]]
-    series_split = mapping.get("series_split_by")
-
-    if not rows or not col_names:
+    if not rows:
         # Empty → return an empty-shaped table so the consumer still has
         # something to render with a clear "no data" affordance.
         return {"kind": "table", "columns": columns, "rows": [], "title": title}
@@ -1899,7 +1903,7 @@ def _to_echarts_option_impl(
         bar_label = {"show": True, "position": "right"} if is_horizontal else None
 
         if series_split and y_cols:
-            # Pivot rows into one series per series_split_by value.
+            # Pivot rows into one series per `binding.series` value.
             x_vals = []
             series_buckets: Dict[str, Dict[str, Any]] = {}
             for r in rows:

@@ -132,13 +132,14 @@ Point `INFINO_DEMO_DATASET` / `INFINO_DEMO_MAPPING_DATASET` at your own indices 
 
 Learn how to control:
 - `description` and `tags` for list-view discoverability
-- `mapping.x` / `mapping.y` / `mapping.series_split_by` to override the auto-picker
+- `mapping.x` (object form `{column, bucket?}`) / `mapping.y` / `mapping.series` to override the auto-picker
+- `mapping.top` / `mapping.other_bucket` for Top-N + 'Other' rollup
 - `options.legend.show` / `position` (top / right / bottom / left)
 - `options.bar_max_width` to cap bar width in wide panels
 - `options.pie_donut_ratio` to turn a pie into a donut (`0.55` is a typical donut look)
 - `options.metric_formatting` (`prefix`, `suffix`, `decimals`, `thousands_separator`, `abbreviate`) for KPI cards
 - `source.sql.limit` / `offset` for paginated execution
-- `visualization_mode` to switch between chart / table / metric rendering
+- `chart.type` of `"table"` / `"metric"` / `"gauge"` for raw-row / single-value rendering (Tranche 1 unified rendering kind under `chart.type`; the legacy `visualization_mode` field is retired)
 
 ```bash
 python -m examples.dashboards.advanced_chart_config
