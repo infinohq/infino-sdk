@@ -85,7 +85,16 @@ viz = sdk.create_visualization({
         "sql": {"limit": 10},
     },
     "chart": {"type": "bar"},
-    "mapping": {"x": {"column": "feature_name"}, "y": ["denials"], "series": None},
+    # Builder-mode aggregating chart:
+    #   `mapping.x` — the GROUP BY dimension (categorical / time column).
+    #   `mapping.y` — leave EMPTY. The y-axis value is the aggregation
+    #     (count / sum / avg) — that's expressed via `aggregation_type`
+    #     or `source.sql.metrics[0]`, NOT via mapping.y. Setting
+    #     mapping.y on an aggregating chart emits a
+    #     `mapping_y_ignored_for_aggregating_chart` warning.
+    #   `mapping.series` — optional, splits into one series per
+    #     distinct value of this column (stacked bar, multi-line, etc.).
+    "mapping": {"x": {"column": "feature_name"}, "y": [], "series": None},
     "aggregation_type": "count",
 })
 ```
@@ -97,7 +106,9 @@ SELECT feature_name, COUNT(*) as count FROM "license_events"
 GROUP BY feature_name ORDER BY feature_name LIMIT 10
 ```
 
-For multi-series charts add `mapping.series`; for connector-backed sources include `source.connector_id` (e.g. `"mysql"`, `"bigquery"`) so identifiers are quoted in the right dialect.
+For connector-backed sources (BigQuery / Snowflake / MySQL / Postgres /
+Oracle), set `source.connector_id` (e.g. `"mysql"`, `"bigquery"`) so the
+gateway quotes identifiers in the right dialect.
 
 ### Aggregation cheat sheet
 
@@ -123,6 +134,166 @@ Picking the wrong one rarely *breaks* the query, but `count` on a numeric column
 
 Mix freely within a dashboard.
 
+### Picking what goes on X and Y
+
+If you're new to visualization, the rule is:
+
+- **X-axis** = the thing you're comparing (the *category* or *dimension*).
+  One row per distinct value of this column. Goes on the horizontal axis
+  for bar / line / area / scatter, becomes the slice label for pie, and
+  the first axis for heatmap.
+- **Y-axis** = the *measurement* — the number you compute for each row.
+  Usually an aggregation: `COUNT(*)`, `SUM(amount)`, `AVG(latency)`. Goes
+  on the vertical axis.
+
+A quick way to sanity-check: read the chart's title aloud as
+*"Y-name **by** X-name"*. If that sentence makes sense, the axes are
+right.
+
+| Chart you want | X (the thing) | Y (the measurement) |
+|---|---|---|
+| Bar / horizontalBar — "denials per feature" | `feature_name` | `COUNT(*)` |
+| Line / area — "denials per day" | `@timestamp` (with `bucket: "day"`) | `COUNT(*)` |
+| Pie — "denials by stage (share of total)" | `stage` | `COUNT(*)` |
+| Heatmap — "denials by feature × hour-of-day" | `hour_of_day` (or `@timestamp` with `bucket: "hour"`) | `COUNT(*)`, with `mapping.series` = `feature_name` |
+| Metric / gauge — single KPI like "total denials" | (none) | `COUNT(*)` |
+| Scatter — "latency vs. payload size" | numeric column (`payload_size`) | numeric column (`latency_ms`) — no aggregation |
+| Table — "recent denials, last 100 rows" | (none) | the columns you want to project |
+
+In Infino's spec:
+- The X column → `mapping.x.column`
+- The aggregation function and (if needed) the column it operates on
+  → `aggregation_type` shorthand OR `source.sql.metrics[0]`
+- A second categorical breakdown (multi-series, heatmap's second axis)
+  → `mapping.series`
+
+You **don't** set the Y-axis column directly for aggregating charts —
+the aggregation (`COUNT(*)`, `SUM(col)`, etc.) IS the Y-axis value, and
+the gateway derives the response column name from it. The only chart
+types where `mapping.y` carries a raw column reference are `scatter`
+(uses `y[0]` as a numeric column with no aggregation) and `table` (uses
+the whole list as the SELECT column list).
+
+### Where does the metric column come from?
+
+Two ways to express the y-axis aggregation. Both are accepted; pick by what
+the chart needs.
+
+**`aggregation_type` shorthand** — for the simple case. Set the function
+name, the gateway picks the column automatically:
+
+- `aggregation_type: "count"` → emits `COUNT(*) as count`. No column
+  needed; the UI doesn't ask for one either.
+- `aggregation_type: "sum"` / `"avg"` → the gateway also looks at
+  `mapping.y[0]` for the column-to-aggregate (this is the one place
+  Builder mode reads from `mapping.y`, and only as a fallback when
+  `metrics[]` is empty). For new code, prefer the explicit form below
+  instead — it's clearer and works with ordering.
+
+**Explicit `source.sql.metrics[0]`** — for everything else (top-N
+ordering, multi-metric in the future, when you want to reference the
+metric by id elsewhere in the spec). Set `id`, `function`, and `column`:
+
+```python
+"source": {
+    "kind": "sql",
+    "index": "orders.rel",
+    "sql": {
+        "metrics": [
+            {"id": "rev", "function": "sum", "column": "revenue"}
+        ],
+        "limit": 10,
+    },
+},
+"chart": {"type": "bar"},
+"mapping": {"x": {"column": "customer_name"}, "y": [], "series": None},
+# No `aggregation_type` — metrics[0] is authoritative.
+```
+
+When you need to reference the metric in `order_by`, use `metric_id`
+— it's rename-safe and you don't need to know the alias the gateway
+will generate (see [Top-N pattern](#top-n-pattern) below).
+
+**Don't set both.** If `source.sql.metrics[0]` is populated, it wins;
+`aggregation_type` is ignored. The gateway doesn't warn (both fields are
+legitimate inputs) but the agent-experience is clearer if you pick one.
+
+**Don't put the metric column in `mapping.y`.** For aggregating charts
+(`bar` / `horizontalBar` / `line` / `area` / `pie` / `heatmap` /
+`metric` / `gauge`), `mapping.y` is ignored at SQL-emission time and
+the gateway emits a `mapping_y_ignored_for_aggregating_chart` warning.
+The two exceptions are `scatter` (where `y[0]` is the raw y-axis
+column with no aggregation) and `table` (where `mapping.y` is the
+SELECT column list).
+
+### Multi-series — splitting one chart into N series
+
+Set `mapping.series` to a categorical column. The renderer pivots the
+result into one series per distinct value (stacked bar, multi-line,
+heatmap second axis):
+
+```python
+viz = sdk.create_visualization({
+    "title": "Denials per feature, split by region",
+    "source": {
+        "kind": "sql",
+        "index": "license_events",
+        "sql": {
+            "metrics": [{"id": "m1", "function": "count", "column": None}],
+            "limit": 50,
+        },
+    },
+    "chart": {"type": "bar"},
+    "mapping": {
+        "x": {"column": "feature_name"},
+        "series": "region",            # ← one bar series per region
+        "y": [],
+    },
+})
+```
+
+`mapping.series` is **required for `heatmap`** (the renderer needs the
+second categorical axis and can't infer it). It's **ignored** for
+`pie` / `scatter` / `metric` / `gauge` / `table`. For bar / line /
+area, it's optional.
+
+### Time bucketing — `mapping.x.bucket`
+
+For time-series charts, set `mapping.x.bucket` to a granularity name
+and the gateway handles the dialect-specific truncation for you (no
+`DATE_TRUNC` / `TIMESTAMP_TRUNC` / `DATE_FORMAT` to remember per engine):
+
+```python
+viz = sdk.create_visualization({
+    "title": "Denials by day",
+    "source": {
+        "kind": "sql",
+        "index": "license_events",
+        "sql": {"limit": 1000},
+    },
+    "chart": {"type": "line"},
+    "mapping": {
+        "x": {"column": "@timestamp", "bucket": "day"},  # bucket nested in x
+        "y": [],
+    },
+    "aggregation_type": "count",
+})
+```
+
+Accepted granularities: `minute`, `hour`, `day`, `week`, `month`,
+`quarter`, `year`. Week is ISO-8601 Monday-start across all engines.
+The response column name stays stable as `mapping.x.column` regardless
+of which engine produced the data — renderers bind to `binding.x`
+directly without case-or-quoting drift.
+
+Oracle returns a 400 with a hint to bake the truncation into
+`raw_query` (per-engine Oracle support is on the roadmap).
+
+`mapping.x.bucket` is mutually exclusive with `mapping.top` +
+`mapping.other_bucket` (the `'Other'` string literal can't share a
+column with a date-typed expression — the gateway emits
+`top_n_other_bucket_incompatible_with_bucket` and skips the rollup).
+
 ### Top-N pattern
 
 The classic "top 10 customers by GMV" pattern uses `source.sql.order_by`
@@ -144,14 +315,13 @@ viz = sdk.create_visualization({
         },
     },
     "chart": {"type": "bar"},
-    "mapping": {"x": {"column": "Customer_Name"}, "y": ["Cust_SKU_GMV"]},
+    "mapping": {"x": {"column": "Customer_Name"}, "y": [], "series": None},
 })
-# Gateway emits:
-#   SELECT `Customer_Name`, SUM(`Cust_SKU_GMV`) as `sum_Cust_SKU_GMV`
-#   FROM `Customer_PnL_v2`
-#   GROUP BY `Customer_Name`
-#   ORDER BY `sum_Cust_SKU_GMV` DESC LIMIT 10
 ```
+
+The chart renders the top 10 customers sorted by `SUM(Cust_SKU_GMV)`
+descending. `metric_id: "gmv"` references `metrics[0].id`; rename the
+column underneath and the order_by entry follows automatically.
 
 Unresolved `metric_id` emits `order_by_metric_id_unresolved` in
 `metadata.warnings[]` and the entry is dropped (the SQL still runs;
@@ -251,13 +421,56 @@ Rules:
   `sql.order_by + sql.limit`; the gateway emits
   `top_n_without_other_bucket_use_limit` and doesn't rewrite the SQL.
 - Mutually exclusive with `mapping.x.bucket` — the 'Other' string literal
-  can't share a column with a date-typed `DATE_TRUNC(...)` result. Emits
+  can't share a column with a date-typed expression. Emits
   `top_n_other_bucket_incompatible_with_bucket`; the rollup is skipped
   and bucketing wins.
-- Outer SQL uses `GROUP BY 1` (positional reference to the CASE
-  expression). Caller-supplied `sql.limit` still bounds the final row
-  count — set it to `N + 1` if you want exactly the top-N plus the
-  'Other' row.
+- `sql.limit` still bounds the final row count — set it to `N + 1` if
+  you want exactly the top-N plus the 'Other' row.
+
+### Builder mode by chart type
+
+What goes where, per chart type. Required fields in **bold**:
+
+| `chart.type` | `mapping.x` | metric / value | `mapping.series` | `mapping.y` |
+|---|---|---|---|---|
+| `bar`, `horizontalBar`, `line`, `area` | **the GROUP BY column** | `aggregation_type` or `metrics[0]` | optional — splits into multi-series | leave empty |
+| `pie` | **slice category** | `aggregation_type` or `metrics[0]` | ignored | leave empty |
+| `heatmap` | **first dimension** (often time) | `aggregation_type` or `metrics[0]` (the cell value) | **second dimension** | leave empty |
+| `metric`, `gauge` | leave empty / null | `aggregation_type` or `metrics[0]` | ignored | leave empty |
+| `scatter` | **x column** (numeric, no aggregation) | n/a — set `aggregation_type: "none"` | optional label column | **y[0]** is the y column |
+| `table` | leave empty / null | n/a | ignored | columns to SELECT (empty → SELECT \*) |
+
+Rules of thumb:
+- Aggregating charts (`bar` / `line` / `area` / `pie` / `heatmap` /
+  `metric` / `gauge`) read the y from `metrics[0]` or `aggregation_type`.
+  `mapping.y` is preserved on the stored config but **ignored** for
+  SQL emission — the gateway warns
+  (`mapping_y_ignored_for_aggregating_chart`) if you set it.
+- `scatter` and `table` are the only chart types where `mapping.y`
+  drives SQL. Scatter takes `y[0]`; table takes the whole array.
+
+### Common pitfalls in Builder mode
+
+Each one corresponds to a gateway warning in `metadata.warnings[]` — if
+you see the code, the fix is one of these:
+
+| Symptom / warning code | What happened | Fix |
+|---|---|---|
+| `missing_x_axis_for_chart` | Chart type needs an X dimension but `mapping.x` is null. Gateway falls back to `SELECT *` and the chart can't bind. | Set `mapping.x = {"column": "..."}`. |
+| `missing_series_for_heatmap` | Heatmap requires a second categorical axis. | Set `mapping.series = "<column>"`. |
+| `mapping_y_ignored_for_aggregating_chart` | You put the metric column in `mapping.y` instead of `metrics[0].column`. The SQL emits `COUNT(*)` (the fallback) instead of your intended aggregation. | Move the column to `metrics[0]` with the function you want. |
+| `unknown_aggregation_function` | `metrics[0].function` isn't one of `count` / `sum` / `avg` / `min` / `max` / `none`. Gateway falls back to `count`. | Use one of the allowlisted functions. |
+| `multi_metric_truncated` | `metrics[]` has more than one entry; only `metrics[0]` is honoured today. | Drop the extras or split into separate vizzes. |
+| `metric_column_unused_with_count_aggregation` | `metrics[0].column` is set but `function` is `count`. The column is dead — `COUNT(*)` doesn't reference it. | Change `function` to `sum` / `avg` to aggregate the column, or remove the column field. |
+| `order_by_column_unrecognized` | `order_by[].column` doesn't match `mapping.x`, `mapping.series`, or any metric alias the gateway will emit. CoreDB silently drops bad refs. | Either reference a real column / metric alias, or use `metric_id` for rename-safe ordering. |
+| `order_by_metric_id_unresolved` | `order_by[].metric_id` doesn't match any `metrics[].id`. | Fix the id, or use `column` / `function` shape instead. |
+| `high_cardinality_no_top_n` | Pie / bar / horizontalBar returned > 15 rows with no Top-N rollup. The chart is unreadable. | Set `mapping.top: N` + `mapping.other_bucket: true`. |
+| `top_n_without_other_bucket_use_limit` | `mapping.top` is set but `mapping.other_bucket` isn't `true`. Without Other-rollup, this is the same as `sql.limit + sql.order_by`. | Add `"other_bucket": True` to keep the long tail, or just use `sql.limit`. |
+| `top_n_other_bucket_incompatible_with_bucket` | Top-N + Other rollup AND `mapping.x.bucket` are mutually exclusive (the 'Other' string literal can't share a column with a date type). | Pick one. Bucketing wins; the rollup is skipped. |
+
+Warnings are advisory — the query still runs, just maybe not the way
+you wanted. Always inspect `metadata.warnings[]` on the execute
+response when iterating on a Builder-mode viz.
 
 ## SDK surface
 
