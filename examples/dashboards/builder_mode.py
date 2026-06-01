@@ -3,8 +3,10 @@ Builder-mode demo: create a dashboard without writing SQL.
 
 The Quickstart in ``docs/dashboards.md`` uses ``source.sql.raw_query`` to
 hand-author each query. This example covers the same shape using **Builder
-mode** — set ``mapping.x`` / ``mapping.y`` / ``aggregation_type`` and let the
-gateway generate the SQL.
+mode** — set ``mapping.x`` and either ``aggregation_type`` (shorthand) or
+``source.sql.metrics[0]`` (explicit) and let the gateway generate the SQL.
+``mapping.y`` is left empty for aggregating chart types; the metric column
+lives in ``metrics[].column``.
 
 Also demos the ``filters=`` kwarg added in 0.6.0:
 - ``execute_visualization(viz_id, filters=[...])`` — runtime filter chips
@@ -56,7 +58,10 @@ def main() -> int:
             },
         },
         "chart": {"type": "bar"},
-        "mapping": {"x": "feature_name", "y": ["denials"], "series_split_by": None},
+        # Raw-SQL mode: mapping.y lists response columns the renderer
+        # should bind to the chart's y-axis. The gateway uses the
+        # raw_query verbatim; mapping fields drive `metadata.binding`.
+        "mapping": {"x": {"column": "feature_name"}, "y": ["denials"], "series": None},
     })
     print(f"✓ raw-SQL viz   {raw_viz['id']}")
 
@@ -72,7 +77,10 @@ def main() -> int:
             # NOTE: no raw_query → triggers server-side SQL generation
         },
         "chart": {"type": "bar"},
-        "mapping": {"x": "feature_name", "y": ["denials"], "series_split_by": None},
+        # Builder mode for an aggregating chart: leave mapping.y empty —
+        # the gateway derives the y-axis column + alias from
+        # `source.sql.metrics[0]` (or `aggregation_type` shorthand below).
+        "mapping": {"x": {"column": "feature_name"}, "y": [], "series": None},
         "aggregation_type": "count",
         # Saved filters travel with the viz and apply at every execute call:
         "filters": [

@@ -1024,9 +1024,8 @@ The API wraps each saved object in a small response shape: `id`, `created_at`, `
     "title": "Top denied features",
     "source": {"kind": "sql", "index": "license_events", "sql": {"raw_query": "..."}},
     "chart": {"type": "bar"},
-    "mapping": {"x": null, "y": [], "series_split_by": null},
+    "mapping": {"x": null, "y": [], "series": null},
     "options": {"metric_formatting": null},
-    "visualization_mode": "chart",
     "tags": [],
     "created_at": "2026-05-15T10:30:00Z",
     "updated_at": "2026-05-15T10:30:00Z",
@@ -1139,8 +1138,8 @@ Column `type` is normalised to `string` / `number` / `boolean` / `date` / `null`
 **Output:** A dict whose `kind` tells you which branch to render:
 
 - `"echarts"` — `result["option"]` is plain ECharts JSON you can pass straight to `echarts.setOption(...)` in the browser, or to pyecharts in Python. Covers `bar`, `horizontalBar`, `line`, `area`, `pie`, `heatmap`, `scatter`.
-- `"table"` — `result["columns"]` and `result["rows"]` for inline HTML / pandas rendering. Returned when `visualization_mode == "table"` or when the data doesn't fit the declared chart type.
-- `"metric"` — `result["value"]` is the single aggregated number with optional `result["formatting"]` (`prefix`, `suffix`, `decimals`, `abbreviate`, `thousands_separator`). Returned when `visualization_mode == "metric"` or `chart.type == "metric" | "gauge"`.
+- `"table"` — `result["columns"]` and `result["rows"]` for inline HTML / pandas rendering. Returned when `chart.type == "table"` or when the data doesn't fit the declared chart type.
+- `"metric"` — `result["value"]` is the single aggregated number with optional `result["formatting"]` (`prefix`, `suffix`, `decimals`, `abbreviate`, `thousands_separator`). Returned when `chart.type == "metric" | "gauge"`.
 
 ---
 

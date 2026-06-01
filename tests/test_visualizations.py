@@ -47,8 +47,7 @@ def test_create_visualization(sdk_with_mock_session, mock_response):
                 "promql": None,
             },
             "chart": {"type": "bar"},
-            "visualization_mode": "chart",
-            "mapping": {"x": None, "y": [], "series_split_by": None},
+            "mapping": {"x": None, "y": [], "series": None},
         },
     }
     sdk.session.request.return_value = mock_response(201, server_envelope)
