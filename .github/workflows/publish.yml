@@ -4,6 +4,20 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (must match pyproject.toml), e.g. 0.7.0'
+        required: true
+        type: string
+      target:
+        description: 'Package index to publish to'
+        required: true
+        type: choice
+        default: testpypi
+        options:
+          - testpypi
+          - pypi
 
 # Two simultaneous tag pushes shouldn't race the publish; let any in-flight
 # job finish before the next one starts. (PyPI rejects duplicate versions
@@ -15,9 +29,13 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # TestPyPI only when manually dispatched with that target; everything else
+    # (tag pushes, dispatch with target=pypi) goes to real PyPI.
+    env:
+      IS_TESTPYPI: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi' }}
     environment:
-      name: pypi
-      url: https://pypi.org/project/infino-sdk/
+      name: ${{ (github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi') && 'testpypi' || 'pypi' }}
+      url: ${{ (github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi') && 'https://test.pypi.org/project/infino-sdk/' || 'https://pypi.org/project/infino-sdk/' }}
     permissions:
       id-token: write   # OIDC token for PyPI trusted publishing
       contents: read
@@ -30,12 +48,16 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Verify tag matches package version
+      - name: Verify requested version matches package version
         run: |
-          TAG="${GITHUB_REF#refs/tags/v}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            REQUESTED="${{ inputs.version }}"
+          else
+            REQUESTED="${GITHUB_REF#refs/tags/v}"
+          fi
           PKG=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          if [ "$TAG" != "$PKG" ]; then
-            echo "::error::Tag v$TAG does not match pyproject.toml version $PKG"
+          if [ "$REQUESTED" != "$PKG" ]; then
+            echo "::error::Requested version $REQUESTED does not match pyproject.toml version $PKG"
             exit 1
           fi
 
@@ -50,14 +72,18 @@ jobs:
       - name: Validate artifacts
         run: twine check dist/*
 
-      - name: Publish to PyPI
+      - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: ${{ env.IS_TESTPYPI == 'true' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
 
   github-release:
     # Creates a GitHub Release for the pushed tag with auto-generated notes
     # from the commits since the previous tag. Runs only after the PyPI
     # publish job succeeds so a failed publish doesn't produce a phantom
-    # Release pointing at an unpublished version.
+    # Release pointing at an unpublished version. Manual dispatch (incl.
+    # TestPyPI runs) publishes only — no Release is created.
+    if: github.event_name == 'push'
     needs: publish
     runs-on: ubuntu-latest
     permissions:
